@@ -1,0 +1,34 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ # API Consistency Best Practices
+
+When making changes to the server component, always check and update the corresponding client and CLI components. This includes:
+1. Adding new endpoints
+2. Modifying existing endpoints
+3. Changing request/response formats
+4. Updating error handling
+5. Modifying data structures
+
+## Avoid
+
+- Modifying server handlers without updating corresponding components:
+  ```go
+  func (s *Server) HandleSomeEndpoint(...)
+  mux.HandleFunc(...)
+  ```
+
+## Prefer
+
+- Updating all components together:
+  - `pkg/client/*.go`
+  - `cmd/datas3t-cli/commands/*.go`
+  - `pkg/server/cucumber_tests.go`
+  - `pkg/server/features/*.feature`
+  - `README.md`
+
+## References
+
+- [REST API Design Best Practices](mdc:https:/www.moesif.com/blog/technical/api-design/REST-API-Design-Best-Practices) 

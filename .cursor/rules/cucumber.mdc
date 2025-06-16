@@ -1,0 +1,50 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Cucumber Feature File Best Practices
+
+Feature files should follow these best practices for clarity and maintainability:
+
+## Each Scenario Must Follow a Single Given-When-Then Flow
+
+Every scenario should have exactly one flow of Given → When → Then steps:
+
+- **Given**: Sets up the preconditions (can have multiple with "And")
+- **When**: Describes a single action being performed (only one per scenario)
+- **Then**: Verifies the expected outcome (can have multiple with "And")
+
+## Avoid
+
+- Multiple When/Then sequences in a single scenario:
+  ```gherkin
+  Given a precondition
+  When I do action 1
+  Then I see result 1
+  When I do action 2   # Bad: Second "When" in the same scenario
+  Then I see result 2
+  ```
+
+## Prefer
+
+- Single When/Then sequence in each scenario:
+  ```gherkin
+  Given a precondition
+  When I do action 1
+  Then I see result 1
+  
+  # New scenario for the second action
+  Scenario: Description of second action
+  Given a precondition
+  When I do action 2
+  Then I see result 2
+  ```
+
+- Using Background for common setup steps
+
+## References
+
+- [Cucumber Documentation](https://cucumber.io/docs/gherkin/reference/)
+- [BDD 101: Writing Good Gherkin](https://cucumber.io/blog/bdd/writing-good-gherkin/)
+

@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ # Go Error Handling Best Practices
+
+Go error handling should be explicit and clear. Separating operations from their error checks improves code readability, debugging, and maintainability.
+
+## Avoid
+
+- Inline error checking:
+  ```go
+  if err := someFunction(); err != nil {
+  ```
+  ```go
+  if _, err := someFunction(); err != nil {
+  ```
+  ```go
+  value, _ := someFunction()
+  ```
+
+## Prefer
+
+- Separate error checking from operations:
+  ```go
+  err = someFunction()
+  if err != nil {
+  ```
+  ```go
+  value, err := someFunction()
+  if err != nil {
+  ```
+
+## References
+
+- [Effective Go - Error Handling](mdc:https:/golang.org/doc/effective_go#errors) 

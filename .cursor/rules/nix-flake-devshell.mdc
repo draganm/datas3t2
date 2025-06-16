@@ -1,0 +1,35 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+ # Working with Nix Flakes and Devshells
+
+This codebase uses Nix flakes with a devshell to provide a consistent development environment. Always run ALL commands within this context, especially Go testing and code generation which require specific tool versions.
+
+## Avoid
+
+- Direct package manager commands:
+  ```bash
+  npm install
+  pip install -r requirements.txt
+  go test ./...
+  go generate
+  make build
+  sqlc generate
+  ```
+
+## Prefer
+
+- Using Nix develop:
+  ```bash
+  nix develop
+  nix develop -c go test ./...
+  nix develop -c go generate
+  nix develop -c make build
+  nix develop -c sqlc generate
+  ```
+
+## References
+
+- [Nix Flakes Documentation](mdc:https:/nixos.wiki/wiki/Flakes) 
