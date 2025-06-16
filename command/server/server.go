@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	_ "github.com/jackc/pgx/v5"
 	"github.com/urfave/cli/v2"
 )
 
@@ -47,7 +49,7 @@ func Server() *cli.Command {
 		},
 		Action: func(c *cli.Context) error {
 
-			_, cancel := signal.NotifyContext(c.Context, os.Interrupt, os.Kill)
+			ctx, cancel := signal.NotifyContext(c.Context, os.Interrupt, os.Kill)
 			defer cancel()
 
 			migrationFS, err := fs.Sub(postgresstore.MigrationsFS, "migrations")
@@ -65,7 +67,7 @@ func Server() *cli.Command {
 			// 	return fmt.Errorf("failed to connect to database: %w", err)
 			// }
 
-			m, err := migrate.NewWithSourceInstance("iofs", d, strings.Replace(cfg.dbURL, "postgres:", "pgx:", 1))
+			m, err := migrate.NewWithSourceInstance("iofs", d, strings.Replace(cfg.dbURL, "postgresql:", "pgx5:", 1))
 			if err != nil {
 				return fmt.Errorf("failed to create migrator: %w", err)
 			}
@@ -93,6 +95,10 @@ func Server() *cli.Command {
 			srv := &http.Server{
 				Handler: mux,
 			}
+
+			context.AfterFunc(ctx, func() {
+				srv.Close()
+			})
 
 			return srv.Serve(l)
 		},

@@ -10,7 +10,7 @@ import (
 )
 
 type Datarange struct {
-	ID              sql.NullInt64
+	ID              int64
 	DatasetID       int64
 	ObjectKey       string
 	MinDatapointKey int64
@@ -21,7 +21,7 @@ type Datarange struct {
 }
 
 type Dataset struct {
-	ID         sql.NullInt64
+	ID         int64
 	Name       string
 	S3BucketID int64
 	CreatedAt  sql.NullTime
@@ -29,7 +29,7 @@ type Dataset struct {
 }
 
 type KeysToDelete struct {
-	ID          sql.NullInt64
+	ID          int64
 	ObjectKey   string
 	CreatedAt   sql.NullTime
 	UpdatedAt   sql.NullTime
@@ -37,7 +37,7 @@ type KeysToDelete struct {
 }
 
 type S3Bucket struct {
-	ID        sql.NullInt64
+	ID        int64
 	Endpoint  string
 	Bucket    string
 	CreatedAt sql.NullTime
