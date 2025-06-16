@@ -19,6 +19,11 @@ Go error handling should be explicit and clear. Separating operations from their
   ```go
   value, _ := someFunction()
   ```
+  ```go
+  	if err := app.Run(os.Args); err != nil {
+		log.Fatal(err)
+	}
+  ```
 
 ## Prefer
 
@@ -30,6 +35,13 @@ Go error handling should be explicit and clear. Separating operations from their
   ```go
   value, err := someFunction()
   if err != nil {
+  ```
+
+  ```go
+    err := app.Run(os.Args)
+    if err != nil {
+        log.Fatal(err)
+    }
   ```
 
 ## References

@@ -10,23 +10,36 @@ import (
 )
 
 type Datarange struct {
-	ID              int32
-	DatasetName     string
+	ID              sql.NullInt64
+	DatasetID       int64
 	ObjectKey       string
 	MinDatapointKey int64
 	MaxDatapointKey int64
 	SizeBytes       int64
+	CreatedAt       sql.NullTime
+	UpdatedAt       sql.NullTime
 }
 
 type Dataset struct {
-	ID        int32
-	Name      string
-	CreatedAt sql.NullTime
-	UpdatedAt sql.NullTime
+	ID         sql.NullInt64
+	Name       string
+	S3BucketID int64
+	CreatedAt  sql.NullTime
+	UpdatedAt  sql.NullTime
 }
 
 type KeysToDelete struct {
-	ID       int32
-	Key      string
-	DeleteAt time.Time
+	ID          sql.NullInt64
+	ObjectKey   string
+	CreatedAt   sql.NullTime
+	UpdatedAt   sql.NullTime
+	DeleteAfter time.Time
+}
+
+type S3Bucket struct {
+	ID        sql.NullInt64
+	Endpoint  string
+	Bucket    string
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
 }

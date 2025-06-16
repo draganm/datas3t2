@@ -1,6 +1,9 @@
 package main
 
 import (
+	"log"
+	"os"
+
 	"github.com/draganm/datas3t2/command/server"
 	"github.com/urfave/cli/v2"
 )
@@ -13,5 +16,10 @@ func main() {
 		Commands: []*cli.Command{
 			server.Server(),
 		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
 	}
 }
