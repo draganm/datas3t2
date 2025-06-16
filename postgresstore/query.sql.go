@@ -9,6 +9,33 @@ import (
 	"context"
 )
 
+const allAccessConfigs = `-- name: AllAccessConfigs :many
+SELECT DISTINCT access_config FROM s3_buckets
+`
+
+func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, allAccessConfigs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var access_config string
+		if err := rows.Scan(&access_config); err != nil {
+			return nil, err
+		}
+		items = append(items, access_config)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const datasetExists = `-- name: DatasetExists :one
 SELECT count(*) > 0 FROM datasets
 `
