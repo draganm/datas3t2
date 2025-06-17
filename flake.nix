@@ -30,11 +30,8 @@
             go
             shellcheck
             sqlc
-            sqlite
-            overmind
             minio
             docker
-            claude-code
           ];
         };
       });
