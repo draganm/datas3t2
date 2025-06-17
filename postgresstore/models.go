@@ -41,6 +41,9 @@ type S3Bucket struct {
 	Name      string
 	Endpoint  string
 	Bucket    string
+	AccessKey string
+	SecretKey string
+	UseTls    bool
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
 }
