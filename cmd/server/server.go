@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -14,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/draganm/datas3t2/httpapi"
 	"github.com/draganm/datas3t2/postgresstore"
 	"github.com/draganm/datas3t2/server"
 	"github.com/golang-migrate/migrate/v4"
@@ -96,31 +95,9 @@ func main() {
 			defer l.Close()
 			logger.Info("server started", "addr", l.Addr())
 
-			mux := http.NewServeMux()
-
 			s := server.NewServer(db)
 
-			mux.HandleFunc("POST /api/v1/buckets", func(w http.ResponseWriter, r *http.Request) {
-				var req server.BucketInfo
-				err := json.NewDecoder(r.Body).Decode(&req)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-
-				err = s.AddBucket(r.Context(), &req)
-				if err != nil {
-
-					var validationErr server.ValidationError
-					if errors.As(err, &validationErr) {
-						http.Error(w, err.Error(), http.StatusBadRequest)
-						return
-					}
-
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			})
+			mux := httpapi.NewHTTPAPI(s)
 
 			srv := &http.Server{
 				Handler: mux,

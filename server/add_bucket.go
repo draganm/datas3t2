@@ -9,9 +9,14 @@ import (
 
 func (s *Server) AddBucket(ctx context.Context, req *BucketInfo) error {
 
+	err := req.Validate(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to validate bucket info: %w", err)
+	}
+
 	queries := postgresstore.New(s.db)
 
-	err := queries.AddBucket(ctx, postgresstore.AddBucketParams{
+	err = queries.AddBucket(ctx, postgresstore.AddBucketParams{
 		Name:      req.Name,
 		Endpoint:  req.Endpoint,
 		Bucket:    req.Bucket,
