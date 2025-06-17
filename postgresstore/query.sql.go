@@ -10,7 +10,7 @@ import (
 )
 
 const allAccessConfigs = `-- name: AllAccessConfigs :many
-SELECT DISTINCT access_config FROM s3_buckets
+SELECT DISTINCT name FROM s3_buckets
 `
 
 func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
@@ -21,11 +21,11 @@ func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
 	defer rows.Close()
 	var items []string
 	for rows.Next() {
-		var access_config string
-		if err := rows.Scan(&access_config); err != nil {
+		var name string
+		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		items = append(items, access_config)
+		items = append(items, name)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

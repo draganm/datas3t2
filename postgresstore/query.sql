@@ -2,4 +2,4 @@
 SELECT count(*) > 0 FROM datasets;
 
 -- name: AllAccessConfigs :many
-SELECT DISTINCT access_config FROM s3_buckets;
+SELECT DISTINCT name FROM s3_buckets;

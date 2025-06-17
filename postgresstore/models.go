@@ -37,10 +37,10 @@ type KeysToDelete struct {
 }
 
 type S3Bucket struct {
-	ID           int64
-	Endpoint     string
-	Bucket       string
-	AccessConfig string
-	CreatedAt    sql.NullTime
-	UpdatedAt    sql.NullTime
+	ID        int64
+	Name      string
+	Endpoint  string
+	Bucket    string
+	CreatedAt sql.NullTime
+	UpdatedAt sql.NullTime
 }
