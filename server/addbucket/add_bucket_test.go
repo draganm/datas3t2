@@ -1,4 +1,4 @@
-package server_test
+package addbucket_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/draganm/datas3t2/postgresstore"
-	"github.com/draganm/datas3t2/server"
+	"github.com/draganm/datas3t2/server/addbucket"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -29,7 +29,7 @@ var _ = Describe("AddBucket", func() {
 		pgContainer    *tc_postgres.PostgresContainer
 		minioContainer *minio.MinioContainer
 		db             *pgxpool.Pool
-		srv            *server.Server
+		srv            *addbucket.AddBucketServer
 		minioEndpoint  string
 		minioHost      string
 		minioAccessKey string
@@ -69,7 +69,7 @@ var _ = Describe("AddBucket", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		m, err := migrate.New(
-			"file://../postgresstore/migrations",
+			"file://../../postgresstore/migrations",
 			connStrForMigration)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -109,7 +109,7 @@ var _ = Describe("AddBucket", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create server instance
-		srv = server.NewServer(db)
+		srv = addbucket.NewServer(db)
 	})
 
 	AfterEach(func() {
@@ -129,7 +129,7 @@ var _ = Describe("AddBucket", func() {
 
 	Context("when adding a valid bucket", func() {
 		It("should successfully add the bucket to the database", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config",
 				Endpoint:  minioEndpoint,
 				Bucket:    testBucketName,
@@ -151,7 +151,7 @@ var _ = Describe("AddBucket", func() {
 		It("should handle TLS enabled buckets", func() {
 			// For this test, we'll use a bucket configuration that doesn't require actual TLS
 			// but tests the TLS flag handling
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config-tls",
 				Endpoint:  minioEndpoint,
 				Bucket:    testBucketName,
@@ -180,7 +180,7 @@ var _ = Describe("AddBucket", func() {
 			}
 
 			for i, name := range validNames {
-				bucketInfo := &server.BucketInfo{
+				bucketInfo := &addbucket.BucketInfo{
 					Name:      name,
 					Endpoint:  minioEndpoint,
 					Bucket:    testBucketName,
@@ -228,7 +228,7 @@ var _ = Describe("AddBucket", func() {
 			}
 
 			for _, name := range invalidNames {
-				bucketInfo := &server.BucketInfo{
+				bucketInfo := &addbucket.BucketInfo{
 					Name:      name,
 					Endpoint:  minioEndpoint,
 					Bucket:    testBucketName,
@@ -244,7 +244,7 @@ var _ = Describe("AddBucket", func() {
 		})
 
 		It("should reject empty endpoint", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config",
 				Endpoint:  "",
 				Bucket:    testBucketName,
@@ -259,7 +259,7 @@ var _ = Describe("AddBucket", func() {
 		})
 
 		It("should reject empty bucket name", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config",
 				Endpoint:  minioEndpoint,
 				Bucket:    "",
@@ -274,7 +274,7 @@ var _ = Describe("AddBucket", func() {
 		})
 
 		It("should reject invalid S3 credentials", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config",
 				Endpoint:  minioEndpoint,
 				Bucket:    testBucketName,
@@ -289,7 +289,7 @@ var _ = Describe("AddBucket", func() {
 		})
 
 		It("should reject non-existent S3 bucket", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config",
 				Endpoint:  minioEndpoint,
 				Bucket:    "non-existent-bucket",
@@ -304,7 +304,7 @@ var _ = Describe("AddBucket", func() {
 		})
 
 		It("should reject unreachable S3 endpoint", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "test-config",
 				Endpoint:  "http://localhost:12345",
 				Bucket:    testBucketName,
@@ -321,7 +321,7 @@ var _ = Describe("AddBucket", func() {
 
 	Context("when handling database constraints", func() {
 		It("should reject duplicate bucket names", func() {
-			bucketInfo := &server.BucketInfo{
+			bucketInfo := &addbucket.BucketInfo{
 				Name:      "duplicate-config",
 				Endpoint:  minioEndpoint,
 				Bucket:    testBucketName,
@@ -351,7 +351,7 @@ var _ = Describe("AddBucket", func() {
 			err = minioClient.MakeBucket(ctx, anotherBucketName, miniogo.MakeBucketOptions{})
 			Expect(err).NotTo(HaveOccurred())
 
-			bucketInfo1 := &server.BucketInfo{
+			bucketInfo1 := &addbucket.BucketInfo{
 				Name:      "config1",
 				Endpoint:  minioEndpoint,
 				Bucket:    testBucketName,
@@ -360,7 +360,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			bucketInfo2 := &server.BucketInfo{
+			bucketInfo2 := &addbucket.BucketInfo{
 				Name:      "config2",
 				Endpoint:  minioEndpoint,
 				Bucket:    testBucketName, // Same endpoint-bucket combination

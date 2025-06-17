@@ -8,18 +8,18 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/draganm/datas3t2/server/addbucket"
+	"github.com/draganm/datas3t2/server/adddatas3t"
 )
 
-func (c *Client) AddBucket(ctx context.Context, bucket *addbucket.BucketInfo) error {
-	ur, err := url.JoinPath(c.baseURL, "api", "v1", "buckets")
+func (c *Client) AddDatas3t(ctx context.Context, datas3t *adddatas3t.AddDatas3tRequest) error {
+	ur, err := url.JoinPath(c.baseURL, "api", "v1", "datas3ts")
 	if err != nil {
 		return fmt.Errorf("failed to join path: %w", err)
 	}
 
-	body, err := json.Marshal(bucket)
+	body, err := json.Marshal(datas3t)
 	if err != nil {
-		return fmt.Errorf("failed to marshal bucket info: %w", err)
+		return fmt.Errorf("failed to marshal dataset info: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", ur, bytes.NewReader(body))
@@ -31,13 +31,13 @@ func (c *Client) AddBucket(ctx context.Context, bucket *addbucket.BucketInfo) er
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to add bucket: %w", err)
+		return fmt.Errorf("failed to add datas3t: %w", err)
 	}
 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to add bucket: %s", resp.Status)
+		return fmt.Errorf("failed to add datas3t: %s", resp.Status)
 	}
 
 	return nil

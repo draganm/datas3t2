@@ -1,4 +1,4 @@
-package server
+package addbucket
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/draganm/datas3t2/postgresstore"
 )
 
-func (s *Server) AddBucket(ctx context.Context, req *BucketInfo) error {
+func (s *AddBucketServer) AddBucket(ctx context.Context, req *BucketInfo) error {
 
 	err := req.Validate(ctx)
 	if err != nil {

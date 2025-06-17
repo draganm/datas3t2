@@ -10,7 +10,15 @@ import (
 )
 
 const addBucket = `-- name: AddBucket :exec
-INSERT INTO s3_buckets (name, endpoint, bucket, access_key, secret_key, use_tls) VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO s3_buckets (
+        name,
+        endpoint,
+        bucket,
+        access_key,
+        secret_key,
+        use_tls
+    )
+VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type AddBucketParams struct {
@@ -34,8 +42,26 @@ func (q *Queries) AddBucket(ctx context.Context, arg AddBucketParams) error {
 	return err
 }
 
+const addDatas3t = `-- name: AddDatas3t :exec
+INSERT INTO datasets (name, s3_bucket_id) 
+SELECT $1, id 
+FROM s3_buckets 
+WHERE s3_buckets.name = $2
+`
+
+type AddDatas3tParams struct {
+	DatasetName string
+	BucketName  string
+}
+
+func (q *Queries) AddDatas3t(ctx context.Context, arg AddDatas3tParams) error {
+	_, err := q.db.Exec(ctx, addDatas3t, arg.DatasetName, arg.BucketName)
+	return err
+}
+
 const allAccessConfigs = `-- name: AllAccessConfigs :many
-SELECT DISTINCT name FROM s3_buckets
+SELECT DISTINCT name
+FROM s3_buckets
 `
 
 func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
@@ -58,8 +84,47 @@ func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const allDatasets = `-- name: AllDatasets :many
+SELECT name
+FROM datasets
+`
+
+func (q *Queries) AllDatasets(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, allDatasets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const bucketExists = `-- name: BucketExists :one
+SELECT count(*) > 0
+FROM s3_buckets
+WHERE name = $1
+`
+
+func (q *Queries) BucketExists(ctx context.Context, name string) (bool, error) {
+	row := q.db.QueryRow(ctx, bucketExists, name)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const datasetExists = `-- name: DatasetExists :one
-SELECT count(*) > 0 FROM datasets
+SELECT count(*) > 0
+FROM datasets
 `
 
 func (q *Queries) DatasetExists(ctx context.Context) (bool, error) {

@@ -1,4 +1,4 @@
-package server_test
+package addbucket_test
 
 import (
 	"testing"
@@ -8,7 +8,6 @@ import (
 )
 
 func TestServer(t *testing.T) {
-	// t.Skip()
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Server Suite")
 }
