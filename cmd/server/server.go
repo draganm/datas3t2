@@ -1,9 +1,12 @@
-package server
+package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,23 +15,25 @@ import (
 	"strings"
 
 	"github.com/draganm/datas3t2/postgresstore"
+	"github.com/draganm/datas3t2/server"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/urfave/cli/v2"
 )
 
-func Server() *cli.Command {
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	cfg := struct {
 		addr  string
 		dbURL string
 	}{}
 
-	return &cli.Command{
-		Name:  "server",
+	app := &cli.App{
+		Name:  "datas3t2-server",
 		Usage: "Start the server",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
@@ -62,10 +67,11 @@ func Server() *cli.Command {
 				return err
 			}
 
-			// conn, err := pgx.Connect(ctx, cfg.dbURL)
-			// if err != nil {
-			// 	return fmt.Errorf("failed to connect to database: %w", err)
-			// }
+			db, err := pgxpool.New(ctx, cfg.dbURL)
+			if err != nil {
+				return fmt.Errorf("failed to connect to database: %w", err)
+			}
+			defer db.Close()
 
 			m, err := migrate.NewWithSourceInstance("iofs", d, strings.Replace(cfg.dbURL, "postgresql:", "pgx5:", 1))
 			if err != nil {
@@ -75,22 +81,46 @@ func Server() *cli.Command {
 			err = m.Up()
 			switch err {
 			case nil:
-				log.Info("Applied database migrations")
+				logger.Info("Applied database migrations")
 			case migrate.ErrNoChange:
-				log.Info("No migrations applied")
+				logger.Info("No migrations applied")
 			default:
 				return fmt.Errorf("failed to run migrations: %w", err)
 			}
 
 			l, err := net.Listen("tcp", cfg.addr)
 			if err != nil {
-				log.Error("failed to listen", "error", err)
+				logger.Error("failed to listen", "error", err)
 				return err
 			}
 			defer l.Close()
-			log.Info("server started", "addr", l.Addr())
+			logger.Info("server started", "addr", l.Addr())
 
 			mux := http.NewServeMux()
+
+			s := server.NewServer(db)
+
+			mux.HandleFunc("POST /api/v1/buckets", func(w http.ResponseWriter, r *http.Request) {
+				var req server.BucketInfo
+				err := json.NewDecoder(r.Body).Decode(&req)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+
+				err = s.AddBucket(r.Context(), &req)
+				if err != nil {
+
+					var validationErr server.ValidationError
+					if errors.As(err, &validationErr) {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			})
 
 			srv := &http.Server{
 				Handler: mux,
@@ -102,5 +132,10 @@ func Server() *cli.Command {
 
 			return srv.Serve(l)
 		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

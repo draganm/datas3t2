@@ -5,8 +5,7 @@
 package postgresstore
 
 import (
-	"database/sql"
-	"time"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Datarange struct {
@@ -16,24 +15,24 @@ type Datarange struct {
 	MinDatapointKey int64
 	MaxDatapointKey int64
 	SizeBytes       int64
-	CreatedAt       sql.NullTime
-	UpdatedAt       sql.NullTime
+	CreatedAt       pgtype.Timestamp
+	UpdatedAt       pgtype.Timestamp
 }
 
 type Dataset struct {
 	ID         int64
 	Name       string
 	S3BucketID int64
-	CreatedAt  sql.NullTime
-	UpdatedAt  sql.NullTime
+	CreatedAt  pgtype.Timestamp
+	UpdatedAt  pgtype.Timestamp
 }
 
 type KeysToDelete struct {
 	ID          int64
 	ObjectKey   string
-	CreatedAt   sql.NullTime
-	UpdatedAt   sql.NullTime
-	DeleteAfter time.Time
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+	DeleteAfter pgtype.Timestamp
 }
 
 type S3Bucket struct {
@@ -44,6 +43,6 @@ type S3Bucket struct {
 	AccessKey string
 	SecretKey string
 	UseTls    bool
-	CreatedAt sql.NullTime
-	UpdatedAt sql.NullTime
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
 }

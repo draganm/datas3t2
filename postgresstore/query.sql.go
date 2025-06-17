@@ -9,12 +9,37 @@ import (
 	"context"
 )
 
+const addBucket = `-- name: AddBucket :exec
+INSERT INTO s3_buckets (name, endpoint, bucket, access_key, secret_key, use_tls) VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type AddBucketParams struct {
+	Name      string
+	Endpoint  string
+	Bucket    string
+	AccessKey string
+	SecretKey string
+	UseTls    bool
+}
+
+func (q *Queries) AddBucket(ctx context.Context, arg AddBucketParams) error {
+	_, err := q.db.Exec(ctx, addBucket,
+		arg.Name,
+		arg.Endpoint,
+		arg.Bucket,
+		arg.AccessKey,
+		arg.SecretKey,
+		arg.UseTls,
+	)
+	return err
+}
+
 const allAccessConfigs = `-- name: AllAccessConfigs :many
 SELECT DISTINCT name FROM s3_buckets
 `
 
 func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, allAccessConfigs)
+	rows, err := q.db.Query(ctx, allAccessConfigs)
 	if err != nil {
 		return nil, err
 	}
@@ -27,9 +52,6 @@ func (q *Queries) AllAccessConfigs(ctx context.Context) ([]string, error) {
 		}
 		items = append(items, name)
 	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
@@ -41,7 +63,7 @@ SELECT count(*) > 0 FROM datasets
 `
 
 func (q *Queries) DatasetExists(ctx context.Context) (bool, error) {
-	row := q.db.QueryRowContext(ctx, datasetExists)
+	row := q.db.QueryRow(ctx, datasetExists)
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err
