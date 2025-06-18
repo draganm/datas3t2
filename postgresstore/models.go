@@ -11,12 +11,26 @@ import (
 type Datarange struct {
 	ID              int64
 	DatasetID       int64
-	ObjectKey       string
+	DataObjectKey   string
+	IndexObjectKey  string
 	MinDatapointKey int64
 	MaxDatapointKey int64
 	SizeBytes       int64
 	CreatedAt       pgtype.Timestamp
 	UpdatedAt       pgtype.Timestamp
+}
+
+type DatarangeUpload struct {
+	ID                  int64
+	DatarangeID         int64
+	UploadID            string
+	DataObjectKey       string
+	IndexObjectKey      string
+	FirstDatapointIndex int64
+	NumberOfDatapoints  int64
+	DataSize            int64
+	CreatedAt           pgtype.Timestamp
+	UpdatedAt           pgtype.Timestamp
 }
 
 type Dataset struct {
@@ -28,11 +42,11 @@ type Dataset struct {
 }
 
 type KeysToDelete struct {
-	ID          int64
-	ObjectKey   string
-	CreatedAt   pgtype.Timestamp
-	UpdatedAt   pgtype.Timestamp
-	DeleteAfter pgtype.Timestamp
+	ID                 int64
+	PresignedDeleteUrl string
+	CreatedAt          pgtype.Timestamp
+	UpdatedAt          pgtype.Timestamp
+	DeleteAfter        pgtype.Timestamp
 }
 
 type S3Bucket struct {

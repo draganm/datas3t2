@@ -7,6 +7,8 @@ package postgresstore
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addBucket = `-- name: AddBucket :exec
@@ -40,6 +42,37 @@ func (q *Queries) AddBucket(ctx context.Context, arg AddBucketParams) error {
 		arg.UseTls,
 	)
 	return err
+}
+
+const addDatarangeUpload = `-- name: AddDatarangeUpload :one
+INSERT INTO datarange_uploads (datarange_id, first_datapoint_index, number_of_datapoints, data_size)
+SELECT dr.id, $1, $2, $3
+FROM dataranges dr
+JOIN datasets d ON dr.dataset_id = d.id
+WHERE d.name = $4
+  AND dr.data_object_key = $5
+RETURNING id
+`
+
+type AddDatarangeUploadParams struct {
+	FirstDatapointIndex int64
+	NumberOfDatapoints  int64
+	DataSize            int64
+	Datas3tName         string
+	DataObjectKey       string
+}
+
+func (q *Queries) AddDatarangeUpload(ctx context.Context, arg AddDatarangeUploadParams) (int64, error) {
+	row := q.db.QueryRow(ctx, addDatarangeUpload,
+		arg.FirstDatapointIndex,
+		arg.NumberOfDatapoints,
+		arg.DataSize,
+		arg.Datas3tName,
+		arg.DataObjectKey,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const addDatas3t = `-- name: AddDatas3t :exec
@@ -122,6 +155,95 @@ func (q *Queries) BucketExists(ctx context.Context, name string) (bool, error) {
 	return column_1, err
 }
 
+const checkDatarangeOverlap = `-- name: CheckDatarangeOverlap :one
+SELECT count(*) > 0
+FROM dataranges
+WHERE dataset_id = $1
+  AND min_datapoint_key < $2
+  AND max_datapoint_key >= $3
+`
+
+type CheckDatarangeOverlapParams struct {
+	DatasetID       int64
+	MinDatapointKey int64
+	MaxDatapointKey int64
+}
+
+func (q *Queries) CheckDatarangeOverlap(ctx context.Context, arg CheckDatarangeOverlapParams) (bool, error) {
+	row := q.db.QueryRow(ctx, checkDatarangeOverlap, arg.DatasetID, arg.MinDatapointKey, arg.MaxDatapointKey)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const createDatarange = `-- name: CreateDatarange :one
+INSERT INTO dataranges (dataset_id, data_object_key, index_object_key, min_datapoint_key, max_datapoint_key, size_bytes)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id
+`
+
+type CreateDatarangeParams struct {
+	DatasetID       int64
+	DataObjectKey   string
+	IndexObjectKey  string
+	MinDatapointKey int64
+	MaxDatapointKey int64
+	SizeBytes       int64
+}
+
+func (q *Queries) CreateDatarange(ctx context.Context, arg CreateDatarangeParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createDatarange,
+		arg.DatasetID,
+		arg.DataObjectKey,
+		arg.IndexObjectKey,
+		arg.MinDatapointKey,
+		arg.MaxDatapointKey,
+		arg.SizeBytes,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const createDatarangeUpload = `-- name: CreateDatarangeUpload :one
+INSERT INTO datarange_uploads (
+    datarange_id, 
+    upload_id,
+    data_object_key,
+    index_object_key,
+    first_datapoint_index, 
+    number_of_datapoints, 
+    data_size
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id
+`
+
+type CreateDatarangeUploadParams struct {
+	DatarangeID         int64
+	UploadID            string
+	DataObjectKey       string
+	IndexObjectKey      string
+	FirstDatapointIndex int64
+	NumberOfDatapoints  int64
+	DataSize            int64
+}
+
+func (q *Queries) CreateDatarangeUpload(ctx context.Context, arg CreateDatarangeUploadParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createDatarangeUpload,
+		arg.DatarangeID,
+		arg.UploadID,
+		arg.DataObjectKey,
+		arg.IndexObjectKey,
+		arg.FirstDatapointIndex,
+		arg.NumberOfDatapoints,
+		arg.DataSize,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const datasetExists = `-- name: DatasetExists :one
 SELECT count(*) > 0
 FROM datasets
@@ -132,4 +254,140 @@ func (q *Queries) DatasetExists(ctx context.Context) (bool, error) {
 	var column_1 bool
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const deleteDatarange = `-- name: DeleteDatarange :exec
+DELETE FROM dataranges WHERE id = $1
+`
+
+func (q *Queries) DeleteDatarange(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteDatarange, id)
+	return err
+}
+
+const deleteDatarangeUpload = `-- name: DeleteDatarangeUpload :exec
+DELETE FROM datarange_uploads WHERE id = $1
+`
+
+func (q *Queries) DeleteDatarangeUpload(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteDatarangeUpload, id)
+	return err
+}
+
+const getDatarangeUploadWithDetails = `-- name: GetDatarangeUploadWithDetails :one
+SELECT 
+    du.id, 
+    du.datarange_id, 
+    du.upload_id, 
+    du.first_datapoint_index, 
+    du.number_of_datapoints, 
+    du.data_size,
+    dr.data_object_key, 
+    dr.index_object_key,
+    dr.dataset_id,
+    d.name as dataset_name, 
+    d.s3_bucket_id,
+    s.endpoint, 
+    s.bucket, 
+    s.access_key, 
+    s.secret_key, 
+    s.use_tls
+FROM datarange_uploads du
+JOIN dataranges dr ON du.datarange_id = dr.id  
+JOIN datasets d ON dr.dataset_id = d.id
+JOIN s3_buckets s ON d.s3_bucket_id = s.id
+WHERE du.id = $1
+`
+
+type GetDatarangeUploadWithDetailsRow struct {
+	ID                  int64
+	DatarangeID         int64
+	UploadID            string
+	FirstDatapointIndex int64
+	NumberOfDatapoints  int64
+	DataSize            int64
+	DataObjectKey       string
+	IndexObjectKey      string
+	DatasetID           int64
+	DatasetName         string
+	S3BucketID          int64
+	Endpoint            string
+	Bucket              string
+	AccessKey           string
+	SecretKey           string
+	UseTls              bool
+}
+
+func (q *Queries) GetDatarangeUploadWithDetails(ctx context.Context, id int64) (GetDatarangeUploadWithDetailsRow, error) {
+	row := q.db.QueryRow(ctx, getDatarangeUploadWithDetails, id)
+	var i GetDatarangeUploadWithDetailsRow
+	err := row.Scan(
+		&i.ID,
+		&i.DatarangeID,
+		&i.UploadID,
+		&i.FirstDatapointIndex,
+		&i.NumberOfDatapoints,
+		&i.DataSize,
+		&i.DataObjectKey,
+		&i.IndexObjectKey,
+		&i.DatasetID,
+		&i.DatasetName,
+		&i.S3BucketID,
+		&i.Endpoint,
+		&i.Bucket,
+		&i.AccessKey,
+		&i.SecretKey,
+		&i.UseTls,
+	)
+	return i, err
+}
+
+const getDatasetWithBucket = `-- name: GetDatasetWithBucket :one
+SELECT d.id, d.name, d.s3_bucket_id, 
+       s.endpoint, s.bucket, s.access_key, s.secret_key, s.use_tls
+FROM datasets d
+JOIN s3_buckets s ON d.s3_bucket_id = s.id
+WHERE d.name = $1
+`
+
+type GetDatasetWithBucketRow struct {
+	ID         int64
+	Name       string
+	S3BucketID int64
+	Endpoint   string
+	Bucket     string
+	AccessKey  string
+	SecretKey  string
+	UseTls     bool
+}
+
+func (q *Queries) GetDatasetWithBucket(ctx context.Context, name string) (GetDatasetWithBucketRow, error) {
+	row := q.db.QueryRow(ctx, getDatasetWithBucket, name)
+	var i GetDatasetWithBucketRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.S3BucketID,
+		&i.Endpoint,
+		&i.Bucket,
+		&i.AccessKey,
+		&i.SecretKey,
+		&i.UseTls,
+	)
+	return i, err
+}
+
+const scheduleKeyForDeletion = `-- name: ScheduleKeyForDeletion :exec
+INSERT INTO keys_to_delete (presigned_delete_url, delete_after)
+VALUES ($1, $2)
+`
+
+type ScheduleKeyForDeletionParams struct {
+	PresignedDeleteUrl string
+	DeleteAfter        pgtype.Timestamp
+}
+
+func (q *Queries) ScheduleKeyForDeletion(ctx context.Context, arg ScheduleKeyForDeletionParams) error {
+	_, err := q.db.Exec(ctx, scheduleKeyForDeletion, arg.PresignedDeleteUrl, arg.DeleteAfter)
+	return err
 }
