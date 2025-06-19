@@ -20,7 +20,7 @@ type CompleteUploadRequest struct {
 	UploadIDs         []string `json:"upload_ids,omitempty"` // Only used for multipart uploads
 }
 
-func (s *UploadDatarangeServer) CompleteUpload(ctx context.Context, req *CompleteUploadRequest) error {
+func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, req *CompleteUploadRequest) error {
 	// 1. Get datarange upload
 	queries := postgresstore.New(s.db)
 	uploadDetails, err := queries.GetDatarangeUploadWithDetails(ctx, req.DatarangeUploadID)

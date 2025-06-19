@@ -509,7 +509,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
@@ -547,7 +547,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("index file not found"))
 
@@ -595,7 +595,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get uploaded object info"))
 
@@ -645,7 +645,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
 				Expect(err.Error()).To(ContainSubstring("expected 1024, got 512"))
@@ -738,7 +738,7 @@ var _ = Describe("UploadDatarange", func() {
 					UploadIDs:         etags,
 				}
 
-				err = uploadSrv.CompleteUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
@@ -801,7 +801,7 @@ var _ = Describe("UploadDatarange", func() {
 					UploadIDs:         []string{etag}, // Missing second part
 				}
 
-				err = uploadSrv.CompleteUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
 				Expect(err).To(HaveOccurred())
 				// When only partial data is uploaded, it fails with size mismatch before multipart completion
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))

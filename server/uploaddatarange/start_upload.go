@@ -65,6 +65,8 @@ func (r *UploadDatarangeRequest) Validate(ctx context.Context) error {
 	return nil
 }
 
+var ErrDatarangeOverlap = fmt.Errorf("datarange overlaps with existing dataranges")
+
 func (s *UploadDatarangeServer) StartDatarangeUpload(ctx context.Context, req *UploadDatarangeRequest) (_ *UploadDatarangeResponse, err error) {
 	err = req.Validate(ctx)
 	if err != nil {
@@ -98,7 +100,7 @@ func (s *UploadDatarangeServer) StartDatarangeUpload(ctx context.Context, req *U
 		}
 
 		if hasOverlap {
-			return nil, fmt.Errorf("datarange overlaps with existing dataranges")
+			return nil, fmt.Errorf("%w: datarange overlaps with existing dataranges", ErrDatarangeOverlap)
 		}
 
 		// Create S3 client
@@ -199,7 +201,7 @@ func (s *UploadDatarangeServer) StartDatarangeUpload(ctx context.Context, req *U
 	}
 
 	if hasOverlap {
-		return nil, fmt.Errorf("datarange overlaps with existing dataranges")
+		return nil, fmt.Errorf("%w: datarange overlaps with existing dataranges", ErrDatarangeOverlap)
 	}
 
 	// Create datarange record
