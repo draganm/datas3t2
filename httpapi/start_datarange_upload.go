@@ -10,16 +10,12 @@ import (
 
 func (a *api) startDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 
-	datas3tName := r.PathValue("name")
-
 	req := &uploaddatarange.UploadDatarangeRequest{}
 	err := json.NewDecoder(r.Body).Decode(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	req.Datas3tName = datas3tName
 
 	err = req.Validate(r.Context())
 	if err != nil {
