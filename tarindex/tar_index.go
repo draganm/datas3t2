@@ -1,6 +1,7 @@
 package tarindex
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"syscall"
@@ -11,6 +12,9 @@ type Index struct {
 	Bytes []byte
 }
 
+// OpenTarIndex opens a tar index file and returns an Index object.
+// name is the path to the index file.
+// Returns nil and an error if the file cannot be opened.
 func OpenTarIndex(name string) (*Index, error) {
 	// Open the index file
 	file, err := os.Open(name)
@@ -36,6 +40,10 @@ func OpenTarIndex(name string) (*Index, error) {
 	if err != nil {
 		file.Close()
 		return nil, fmt.Errorf("failed to mmap index file %s: %w", name, err)
+	}
+
+	if len(data)%16 != 0 {
+		return nil, fmt.Errorf("index file %s is not a multiple of 16 bytes", name)
 	}
 
 	return &Index{
@@ -71,4 +79,38 @@ func (i *Index) Close() error {
 	}
 
 	return nil
+}
+
+// FileMetadata contains the metadata for a file in the index.
+// Start is the offset of the file in the tar archive.
+// HeaderBlocks is the number of blocks in the header of the file (each block is 512 bytes).
+// Size is the size of the file in bytes.
+type FileMetadata struct {
+	Start        int64
+	HeaderBlocks uint16
+	Size         int64
+}
+
+// GetFileMetadata returns the metadata for a file in the index.
+// index is the index of the file in the index.
+// Returns the metadata for the file.
+func (i *Index) GetFileMetadata(index uint64) (FileMetadata, error) {
+	if index >= uint64(len(i.Bytes))/16 {
+		return FileMetadata{}, fmt.Errorf("index out of bounds: %d", index)
+	}
+
+	offset := int64(index * 16)
+	start := int64(binary.BigEndian.Uint64(i.Bytes[offset : offset+8]))
+	blocks := binary.BigEndian.Uint16(i.Bytes[offset+8 : offset+10])
+	size := int64(binary.BigEndian.Uint64(i.Bytes[offset+10 : offset+16]))
+
+	return FileMetadata{
+		Start:        start,
+		HeaderBlocks: blocks,
+		Size:         size,
+	}, nil
+}
+
+func (i *Index) NumFiles() uint64 {
+	return uint64(len(i.Bytes) / 16)
 }

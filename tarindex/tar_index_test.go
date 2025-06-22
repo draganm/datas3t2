@@ -92,9 +92,11 @@ func TestIndex_Close(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create a test index file
+	// Create a test index file with proper 16-byte aligned data
 	indexPath := filepath.Join(tmpDir, "test.idx")
-	testData := []byte("test index data")
+	testData := make([]byte, 16) // 16 bytes to represent one file metadata entry
+	// Fill with some test data
+	copy(testData, []byte("test index data"))
 	err = os.WriteFile(indexPath, testData, 0644)
 	if err != nil {
 		t.Fatal(err)
