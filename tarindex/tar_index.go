@@ -102,7 +102,11 @@ func (i *Index) GetFileMetadata(index uint64) (FileMetadata, error) {
 	offset := int64(index * 16)
 	start := int64(binary.BigEndian.Uint64(i.Bytes[offset : offset+8]))
 	blocks := binary.BigEndian.Uint16(i.Bytes[offset+8 : offset+10])
-	size := int64(binary.BigEndian.Uint64(i.Bytes[offset+10 : offset+16]))
+
+	// File size is stored in 6 bytes (offset 10-16), need to pad to 8 bytes for Uint64
+	sizeBytes := make([]byte, 8)
+	copy(sizeBytes[2:], i.Bytes[offset+10:offset+16]) // Copy 6 bytes to the last 6 positions
+	size := int64(binary.BigEndian.Uint64(sizeBytes))
 
 	return FileMetadata{
 		Start:        start,

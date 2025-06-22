@@ -3,11 +3,14 @@ package uploaddatarange_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"archive/tar"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -16,6 +19,7 @@ import (
 	"github.com/draganm/datas3t2/server/addbucket"
 	"github.com/draganm/datas3t2/server/adddatas3t"
 	"github.com/draganm/datas3t2/server/uploaddatarange"
+	"github.com/draganm/datas3t2/tarindex"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -39,6 +43,96 @@ func httpPut(url string, body io.Reader) (*http.Response, error) {
 
 	client := &http.Client{}
 	return client.Do(req)
+}
+
+// createProperTarWithIndex creates a proper TAR archive with correctly named files and returns both the tar data and index
+func createProperTarWithIndex(numFiles int, startIndex int64) ([]byte, []byte) {
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+
+	// Create files with proper %020d.<extension> naming
+	for i := 0; i < numFiles; i++ {
+		filename := fmt.Sprintf("%020d.txt", startIndex+int64(i))
+		content := fmt.Sprintf("Content of file %d", startIndex+int64(i))
+
+		header := &tar.Header{
+			Name: filename,
+			Size: int64(len(content)),
+			Mode: 0644,
+		}
+
+		err := tw.WriteHeader(header)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to write tar header: %v", err))
+		}
+
+		_, err = tw.Write([]byte(content))
+		if err != nil {
+			panic(fmt.Sprintf("Failed to write tar content: %v", err))
+		}
+	}
+
+	err := tw.Close()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to close tar writer: %v", err))
+	}
+
+	// Create the tar index
+	tarReader := bytes.NewReader(tarBuf.Bytes())
+	indexData, err := tarindex.IndexTar(tarReader)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create tar index: %v", err))
+	}
+
+	return tarBuf.Bytes(), indexData
+}
+
+// createTarWithInvalidNames creates a TAR archive with incorrectly named files for testing validation failures
+func createTarWithInvalidNames() ([]byte, []byte) {
+	var tarBuf bytes.Buffer
+	tw := tar.NewWriter(&tarBuf)
+
+	// Create files with invalid naming (not following %020d.<extension> format)
+	invalidFiles := []struct {
+		name    string
+		content string
+	}{
+		{"invalid_name.txt", "Content 1"},
+		{"123.txt", "Content 2"},                       // Too short
+		{"file_00000000000000000003.txt", "Content 3"}, // Wrong format
+	}
+
+	for _, file := range invalidFiles {
+		header := &tar.Header{
+			Name: file.name,
+			Size: int64(len(file.content)),
+			Mode: 0644,
+		}
+
+		err := tw.WriteHeader(header)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to write tar header: %v", err))
+		}
+
+		_, err = tw.Write([]byte(file.content))
+		if err != nil {
+			panic(fmt.Sprintf("Failed to write tar content: %v", err))
+		}
+	}
+
+	err := tw.Close()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to close tar writer: %v", err))
+	}
+
+	// Create the tar index
+	tarReader := bytes.NewReader(tarBuf.Bytes())
+	indexData, err := tarindex.IndexTar(tarReader)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create tar index: %v", err))
+	}
+
+	return tarBuf.Bytes(), indexData
 }
 
 var _ = Describe("UploadDatarange", func() {
@@ -1081,6 +1175,137 @@ var _ = Describe("UploadDatarange", func() {
 				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
+			})
+		})
+	})
+
+	Context("Tar Index Validation", func() {
+		var uploadResp *uploaddatarange.UploadDatarangeResponse
+		var properTarData []byte
+		var properTarIndex []byte
+
+		BeforeEach(func() {
+			// Create a proper TAR archive with correctly named files
+			properTarData, properTarIndex = createProperTarWithIndex(5, 0) // 5 files starting from index 0
+
+			// Start an upload with the correct size
+			req := &uploaddatarange.UploadDatarangeRequest{
+				Datas3tName:         testDatasetName,
+				DataSize:            uint64(len(properTarData)),
+				NumberOfDatapoints:  5,
+				FirstDatapointIndex: 0,
+			}
+
+			var err error
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		Context("when tar validation succeeds", func() {
+			It("should validate proper tar files with correct index", func() {
+				// Upload proper tar data
+				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(properTarData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(dataResp.StatusCode).To(Equal(http.StatusOK))
+				dataResp.Body.Close()
+
+				// Upload proper tar index
+				indexResp, err := httpPut(uploadResp.PresignedIndexPutURL, bytes.NewReader(properTarIndex))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(indexResp.StatusCode).To(Equal(http.StatusOK))
+				indexResp.Body.Close()
+
+				// Complete the upload - should succeed with validation
+				completeReq := &uploaddatarange.CompleteUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify upload completed successfully
+				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				Expect(err).NotTo(HaveOccurred())
+				defer uploads.Close()
+				Expect(uploads.Next()).To(BeTrue())
+				var uploadCount int
+				err = uploads.Scan(&uploadCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadCount).To(Equal(0))
+			})
+		})
+
+		Context("when tar validation fails due to size mismatch", func() {
+			It("should reject tar with incorrect size", func() {
+				// Create tar data with wrong size (truncate it)
+				wrongSizeTarData := properTarData[:len(properTarData)-100]
+
+				// Upload wrong size tar data
+				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(wrongSizeTarData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(dataResp.StatusCode).To(Equal(http.StatusOK))
+				dataResp.Body.Close()
+
+				// Upload proper tar index (which will now be inconsistent with data)
+				indexResp, err := httpPut(uploadResp.PresignedIndexPutURL, bytes.NewReader(properTarIndex))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(indexResp.StatusCode).To(Equal(http.StatusOK))
+				indexResp.Body.Close()
+
+				// Complete the upload - should fail during validation
+				completeReq := &uploaddatarange.CompleteUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
+			})
+		})
+
+		Context("when tar validation fails due to invalid file names", func() {
+			It("should reject tar with incorrectly named files", func() {
+				// Create tar with wrong file names
+				invalidTarData, invalidTarIndex := createTarWithInvalidNames()
+
+				// Update the upload request with correct size for the invalid tar
+				err := uploadSrv.CancelDatarangeUpload(ctx, &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Start a new upload with correct size
+				req := &uploaddatarange.UploadDatarangeRequest{
+					Datas3tName:         testDatasetName,
+					DataSize:            uint64(len(invalidTarData)),
+					NumberOfDatapoints:  3,
+					FirstDatapointIndex: 0,
+				}
+
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Upload invalid tar data
+				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(invalidTarData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(dataResp.StatusCode).To(Equal(http.StatusOK))
+				dataResp.Body.Close()
+
+				// Upload invalid tar index
+				indexResp, err := httpPut(uploadResp.PresignedIndexPutURL, bytes.NewReader(invalidTarIndex))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(indexResp.StatusCode).To(Equal(http.StatusOK))
+				indexResp.Body.Close()
+
+				// Complete the upload - should fail during validation
+				completeReq := &uploaddatarange.CompleteUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("tar index validation failed"))
+				Expect(err.Error()).To(ContainSubstring("invalid file name format"))
 			})
 		})
 	})
