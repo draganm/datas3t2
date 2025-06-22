@@ -21,7 +21,7 @@ type CompleteUploadRequest struct {
 }
 
 func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, req *CompleteUploadRequest) error {
-	// 1. Get datarange upload
+	// 1. Get datarange upload details (read-only operation)
 	queries := postgresstore.New(s.db)
 	uploadDetails, err := queries.GetDatarangeUploadWithDetails(ctx, req.DatarangeUploadID)
 	if err != nil {
@@ -34,13 +34,26 @@ func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, req
 		return fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
-	// 3. Complete upload (different logic for direct PUT vs multipart)
+	// 3. Perform all S3 operations first (without database changes)
+	err = s.performS3Operations(ctx, s3Client, uploadDetails, req.UploadIDs)
+	if err != nil {
+		// S3 operations failed - handle cleanup in a single transaction
+		return s.handleFailureInTransaction(ctx, queries, s3Client, uploadDetails, err)
+	}
+
+	// 4. S3 operations succeeded - complete in a single transaction
+	return s.handleSuccessInTransaction(ctx, queries, req.DatarangeUploadID)
+}
+
+// performS3Operations handles all S3 network calls without any database changes
+func (s *UploadDatarangeServer) performS3Operations(ctx context.Context, s3Client *s3.Client, uploadDetails postgresstore.GetDatarangeUploadWithDetailsRow, uploadIDs []string) error {
+	// Complete upload (different logic for direct PUT vs multipart)
 	isDirectPut := uploadDetails.UploadID == "DIRECT_PUT"
 
 	if !isDirectPut {
 		// Handle multipart upload completion
 		var completedParts []types.CompletedPart
-		for i, uploadID := range req.UploadIDs {
+		for i, uploadID := range uploadIDs {
 			completedParts = append(completedParts, types.CompletedPart{
 				ETag:       aws.String(uploadID),
 				PartNumber: aws.Int32(int32(i + 1)),
@@ -56,7 +69,7 @@ func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, req
 			},
 		}
 
-		_, err = s3Client.CompleteMultipartUpload(ctx, completeInput)
+		_, err := s3Client.CompleteMultipartUpload(ctx, completeInput)
 		if err != nil {
 			// Abort the upload if completion fails
 			s3Client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
@@ -64,58 +77,143 @@ func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, req
 				Key:      aws.String(uploadDetails.DataObjectKey),
 				UploadId: aws.String(uploadDetails.UploadID),
 			})
-
 			return fmt.Errorf("failed to complete multipart upload: %w", err)
 		}
 	}
 	// For direct PUT, no completion step needed - the object should already be uploaded
 
-	// 4. Check if the index is present
+	// Check if the index is present
 	indexObjectKey := uploadDetails.IndexObjectKey
-	_, err = s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+	_, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(uploadDetails.Bucket),
 		Key:    aws.String(indexObjectKey),
 	})
 	if err != nil {
-		// Index is not present, schedule deletion and cleanup
-		err = s.scheduleCleanupAndDelete(ctx, queries, s3Client, uploadDetails, indexObjectKey)
-		if err != nil {
-			return fmt.Errorf("failed to schedule cleanup after missing index: %w", err)
-		}
-		return fmt.Errorf("index file not found")
+		return fmt.Errorf("index file not found: %w", err)
 	}
 
-	// 5. Check the size of the uploaded data
+	// Check the size of the uploaded data
 	headResp, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(uploadDetails.Bucket),
 		Key:    aws.String(uploadDetails.DataObjectKey),
 	})
 	if err != nil {
-		// Failed to get object info, schedule cleanup
-		err = s.scheduleCleanupAndDelete(ctx, queries, s3Client, uploadDetails, indexObjectKey)
-		if err != nil {
-			return fmt.Errorf("failed to schedule cleanup after head object failure: %w", err)
-		}
 		return fmt.Errorf("failed to get uploaded object info: %w", err)
 	}
 
 	if headResp.ContentLength == nil || *headResp.ContentLength != uploadDetails.DataSize {
-		// Size mismatch, schedule cleanup
-		err = s.scheduleCleanupAndDelete(ctx, queries, s3Client, uploadDetails, indexObjectKey)
-		if err != nil {
-			return fmt.Errorf("failed to schedule cleanup after size mismatch: %w", err)
-		}
 		return fmt.Errorf("uploaded size mismatch: expected %d, got %d",
 			uploadDetails.DataSize, aws.ToInt64(headResp.ContentLength))
 	}
 
-	// 6. Everything is good - clean up the upload record
-	err = queries.DeleteDatarangeUpload(ctx, req.DatarangeUploadID)
+	return nil
+}
+
+// handleSuccessInTransaction performs all success-case database operations in a single transaction
+func (s *UploadDatarangeServer) handleSuccessInTransaction(ctx context.Context, queries *postgresstore.Queries, datarangeUploadID int64) error {
+	// Begin transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Create queries with transaction
+	txQueries := queries.WithTx(tx)
+
+	// Delete the upload record
+	err = txQueries.DeleteDatarangeUpload(ctx, datarangeUploadID)
 	if err != nil {
 		return fmt.Errorf("failed to delete datarange upload record: %w", err)
 	}
 
+	// Commit transaction
+	err = tx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return nil
+}
+
+// handleFailureInTransaction performs all failure-case database operations in a single transaction
+func (s *UploadDatarangeServer) handleFailureInTransaction(ctx context.Context, queries *postgresstore.Queries, s3Client *s3.Client, uploadDetails postgresstore.GetDatarangeUploadWithDetailsRow, originalErr error) error {
+	// Begin transaction
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Create queries with transaction
+	txQueries := queries.WithTx(tx)
+
+	// Generate presigned delete URLs for both data and index objects
+	presigner := s3.NewPresignClient(s3Client)
+
+	// Schedule data object for deletion
+	dataDeleteReq, err := presigner.PresignDeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(uploadDetails.Bucket),
+		Key:    aws.String(uploadDetails.DataObjectKey),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = 24 * time.Hour
+	})
+	if err != nil {
+		return fmt.Errorf("failed to presign data object delete: %w", err)
+	}
+
+	// Schedule index object for deletion
+	indexDeleteReq, err := presigner.PresignDeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(uploadDetails.Bucket),
+		Key:    aws.String(uploadDetails.IndexObjectKey),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = 24 * time.Hour
+	})
+	if err != nil {
+		return fmt.Errorf("failed to presign index object delete: %w", err)
+	}
+
+	// Schedule both objects for deletion
+	deleteAfter := pgtype.Timestamp{
+		Time:  time.Now().Add(time.Hour), // Delete after 1 hour
+		Valid: true,
+	}
+
+	err = txQueries.ScheduleKeyForDeletion(ctx, postgresstore.ScheduleKeyForDeletionParams{
+		PresignedDeleteUrl: dataDeleteReq.URL,
+		DeleteAfter:        deleteAfter,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to schedule data object deletion: %w", err)
+	}
+
+	err = txQueries.ScheduleKeyForDeletion(ctx, postgresstore.ScheduleKeyForDeletionParams{
+		PresignedDeleteUrl: indexDeleteReq.URL,
+		DeleteAfter:        deleteAfter,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to schedule index object deletion: %w", err)
+	}
+
+	// Delete the datarange record and upload record
+	err = txQueries.DeleteDatarangeUpload(ctx, uploadDetails.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete datarange upload record: %w", err)
+	}
+
+	err = txQueries.DeleteDatarange(ctx, uploadDetails.DatarangeID)
+	if err != nil {
+		return fmt.Errorf("failed to delete datarange record: %w", err)
+	}
+
+	// Commit transaction
+	err = tx.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	// Return the original error that caused the failure
+	return originalErr
 }
 
 func (s *UploadDatarangeServer) createS3ClientFromUploadDetails(ctx context.Context, uploadDetails postgresstore.GetDatarangeUploadWithDetailsRow) (*s3.Client, error) {
@@ -151,66 +249,4 @@ func (s *UploadDatarangeServer) createS3ClientFromUploadDetails(ctx context.Cont
 	})
 
 	return s3Client, nil
-}
-
-func (s *UploadDatarangeServer) scheduleCleanupAndDelete(ctx context.Context, queries *postgresstore.Queries, s3Client *s3.Client, uploadDetails postgresstore.GetDatarangeUploadWithDetailsRow, indexObjectKey string) error {
-	// Generate presigned delete URLs for both data and index objects
-	presigner := s3.NewPresignClient(s3Client)
-
-	// Schedule data object for deletion
-	dataDeleteReq, err := presigner.PresignDeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(uploadDetails.Bucket),
-		Key:    aws.String(uploadDetails.DataObjectKey),
-	}, func(opts *s3.PresignOptions) {
-		opts.Expires = 24 * time.Hour
-	})
-	if err != nil {
-		return fmt.Errorf("failed to presign data object delete: %w", err)
-	}
-
-	// Schedule index object for deletion
-	indexDeleteReq, err := presigner.PresignDeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(uploadDetails.Bucket),
-		Key:    aws.String(indexObjectKey),
-	}, func(opts *s3.PresignOptions) {
-		opts.Expires = 24 * time.Hour
-	})
-	if err != nil {
-		return fmt.Errorf("failed to presign index object delete: %w", err)
-	}
-
-	// Schedule both objects for deletion
-	deleteAfter := pgtype.Timestamp{
-		Time:  time.Now().Add(time.Hour), // Delete after 1 hour
-		Valid: true,
-	}
-
-	err = queries.ScheduleKeyForDeletion(ctx, postgresstore.ScheduleKeyForDeletionParams{
-		PresignedDeleteUrl: dataDeleteReq.URL,
-		DeleteAfter:        deleteAfter,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to schedule data object deletion: %w", err)
-	}
-
-	err = queries.ScheduleKeyForDeletion(ctx, postgresstore.ScheduleKeyForDeletionParams{
-		PresignedDeleteUrl: indexDeleteReq.URL,
-		DeleteAfter:        deleteAfter,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to schedule index object deletion: %w", err)
-	}
-
-	// Delete the datarange record and upload record
-	err = queries.DeleteDatarangeUpload(ctx, uploadDetails.ID)
-	if err != nil {
-		return fmt.Errorf("failed to delete datarange upload record: %w", err)
-	}
-
-	err = queries.DeleteDatarange(ctx, uploadDetails.DatarangeID)
-	if err != nil {
-		return fmt.Errorf("failed to delete datarange record: %w", err)
-	}
-
-	return nil
 }
