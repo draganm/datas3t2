@@ -25,6 +25,8 @@ jobs:
       - name: Run tests
         # Some tests fail on the runner, but because they're not relevant to our work, we disable them.
         run: nix develop --command go test ./...
+        env:
+          AWS_REQUEST_CHECKSUM_CALCULATION: "when_required"
 
   # docker:
   #   name: Build and Push Docker Image

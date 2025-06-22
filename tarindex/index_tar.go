@@ -6,9 +6,7 @@ import (
 	"io"
 )
 
-type Index []byte
-
-func IndexTar(r io.Reader) (Index, error) {
+func IndexTar(r io.Reader) ([]byte, error) {
 	var index []byte
 	tr := tar.NewReader(r)
 	var position int64 = 0
@@ -60,5 +58,5 @@ func IndexTar(r io.Reader) (Index, error) {
 		}
 	}
 
-	return Index(index), nil
+	return index, nil
 }
