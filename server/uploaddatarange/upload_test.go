@@ -828,4 +828,260 @@ var _ = Describe("UploadDatarange", func() {
 			})
 		})
 	})
+
+	Context("CancelDatarangeUpload", func() {
+		Context("when cancelling a direct PUT upload", func() {
+			var uploadResp *uploaddatarange.UploadDatarangeResponse
+
+			BeforeEach(func() {
+				// Start a small upload that uses direct PUT
+				req := &uploaddatarange.UploadDatarangeRequest{
+					Datas3tName:         testDatasetName,
+					DataSize:            1024, // Small size < 5MB
+					NumberOfDatapoints:  10,
+					FirstDatapointIndex: 0,
+				}
+
+				var err error
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadResp.UseDirectPut).To(BeTrue())
+			})
+
+			It("should successfully cancel upload and clean up database records", func() {
+				// Verify initial state
+				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				Expect(err).NotTo(HaveOccurred())
+				defer uploads.Close()
+				Expect(uploads.Next()).To(BeTrue())
+				var uploadCount int
+				err = uploads.Scan(&uploadCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadCount).To(Equal(1))
+
+				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				Expect(err).NotTo(HaveOccurred())
+				defer dataranges.Close()
+				Expect(dataranges.Next()).To(BeTrue())
+				var datarangeCount int
+				err = dataranges.Scan(&datarangeCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(datarangeCount).To(Equal(1))
+
+				// Cancel the upload
+				cancelReq := &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify upload record was deleted
+				uploads2, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				Expect(err).NotTo(HaveOccurred())
+				defer uploads2.Close()
+				Expect(uploads2.Next()).To(BeTrue())
+				var uploadCount2 int
+				err = uploads2.Scan(&uploadCount2)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadCount2).To(Equal(0))
+
+				// Verify datarange record was also deleted
+				dataranges2, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				Expect(err).NotTo(HaveOccurred())
+				defer dataranges2.Close()
+				Expect(dataranges2.Next()).To(BeTrue())
+				var datarangeCount2 int
+				err = dataranges2.Scan(&datarangeCount2)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(datarangeCount2).To(Equal(0))
+
+				// Verify cleanup tasks were scheduled
+				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				Expect(err).NotTo(HaveOccurred())
+				defer cleanupTasks.Close()
+				Expect(cleanupTasks.Next()).To(BeTrue())
+				var cleanupCount int
+				err = cleanupTasks.Scan(&cleanupCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+			})
+		})
+
+		Context("when cancelling a multipart upload", func() {
+			var uploadResp *uploaddatarange.UploadDatarangeResponse
+
+			BeforeEach(func() {
+				// Start a large upload that requires multipart
+				req := &uploaddatarange.UploadDatarangeRequest{
+					Datas3tName:         testDatasetName,
+					DataSize:            10 * 1024 * 1024, // 10MB
+					NumberOfDatapoints:  1000,
+					FirstDatapointIndex: 100,
+				}
+
+				var err error
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadResp.UseDirectPut).To(BeFalse())
+			})
+
+			It("should successfully cancel multipart upload and clean up database records", func() {
+				// Verify initial state
+				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				Expect(err).NotTo(HaveOccurred())
+				defer uploads.Close()
+				Expect(uploads.Next()).To(BeTrue())
+				var uploadCount int
+				err = uploads.Scan(&uploadCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadCount).To(Equal(1))
+
+				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				Expect(err).NotTo(HaveOccurred())
+				defer dataranges.Close()
+				Expect(dataranges.Next()).To(BeTrue())
+				var datarangeCount int
+				err = dataranges.Scan(&datarangeCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(datarangeCount).To(Equal(1))
+
+				// Cancel the upload
+				cancelReq := &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify upload record was deleted
+				uploads2, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				Expect(err).NotTo(HaveOccurred())
+				defer uploads2.Close()
+				Expect(uploads2.Next()).To(BeTrue())
+				var uploadCount2 int
+				err = uploads2.Scan(&uploadCount2)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadCount2).To(Equal(0))
+
+				// Verify datarange record was also deleted
+				dataranges2, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				Expect(err).NotTo(HaveOccurred())
+				defer dataranges2.Close()
+				Expect(dataranges2.Next()).To(BeTrue())
+				var datarangeCount2 int
+				err = dataranges2.Scan(&datarangeCount2)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(datarangeCount2).To(Equal(0))
+
+				// Verify cleanup tasks were scheduled
+				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				Expect(err).NotTo(HaveOccurred())
+				defer cleanupTasks.Close()
+				Expect(cleanupTasks.Next()).To(BeTrue())
+				var cleanupCount int
+				err = cleanupTasks.Scan(&cleanupCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+			})
+
+			It("should handle partial uploads by cancelling and cleaning up properly", func() {
+				// Upload one part to simulate partial upload
+				testData := make([]byte, 5*1024*1024) // 5MB for first part
+				for i := range testData {
+					testData[i] = byte(i % 256)
+				}
+
+				resp, err := httpPut(uploadResp.PresignedMultipartUploadPutURLs[0], bytes.NewReader(testData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				resp.Body.Close()
+
+				// Cancel the upload (should abort multipart and clean up)
+				cancelReq := &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Verify database cleanup
+				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				Expect(err).NotTo(HaveOccurred())
+				defer uploads.Close()
+				Expect(uploads.Next()).To(BeTrue())
+				var uploadCount int
+				err = uploads.Scan(&uploadCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(uploadCount).To(Equal(0))
+
+				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				Expect(err).NotTo(HaveOccurred())
+				defer dataranges.Close()
+				Expect(dataranges.Next()).To(BeTrue())
+				var datarangeCount int
+				err = dataranges.Scan(&datarangeCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(datarangeCount).To(Equal(0))
+
+				// Verify cleanup tasks were scheduled
+				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				Expect(err).NotTo(HaveOccurred())
+				defer cleanupTasks.Close()
+				Expect(cleanupTasks.Next()).To(BeTrue())
+				var cleanupCount int
+				err = cleanupTasks.Scan(&cleanupCount)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+			})
+		})
+
+		Context("when validation fails", func() {
+			It("should reject non-existent upload ID", func() {
+				cancelReq := &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: 999999, // Non-existent ID
+				}
+
+				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
+			})
+		})
+
+		Context("when upload has already been cancelled", func() {
+			var uploadResp *uploaddatarange.UploadDatarangeResponse
+
+			BeforeEach(func() {
+				// Start an upload
+				req := &uploaddatarange.UploadDatarangeRequest{
+					Datas3tName:         testDatasetName,
+					DataSize:            1024,
+					NumberOfDatapoints:  10,
+					FirstDatapointIndex: 0,
+				}
+
+				var err error
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Cancel it once
+				cancelReq := &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should return error when trying to cancel again", func() {
+				// Try to cancel again
+				cancelReq := &uploaddatarange.CancelUploadRequest{
+					DatarangeUploadID: uploadResp.DatarangeID,
+				}
+
+				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
+			})
+		})
+	})
 })
