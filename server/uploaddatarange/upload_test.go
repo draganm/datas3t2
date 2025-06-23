@@ -947,7 +947,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(uploadResp.UseDirectPut).To(BeTrue())
 			})
 
-			XIt("should successfully cancel upload and clean up database records", func() {
+			It("should successfully cancel upload and clean up database records", func() {
 				// Verify initial state
 				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
 				Expect(err).NotTo(HaveOccurred())
@@ -1007,7 +1007,7 @@ var _ = Describe("UploadDatarange", func() {
 			})
 		})
 
-		XContext("when cancelling a multipart upload", func() {
+		Context("when cancelling a multipart upload", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
 			BeforeEach(func() {

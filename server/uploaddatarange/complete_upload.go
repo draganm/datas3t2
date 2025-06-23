@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -241,7 +242,7 @@ func (s *UploadDatarangeServer) createS3ClientFromUploadDetails(ctx context.Cont
 		}
 	}
 
-	// Create AWS config with custom credentials
+	// Create AWS config with custom credentials and timeouts
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			uploadDetails.AccessKey,
@@ -249,6 +250,9 @@ func (s *UploadDatarangeServer) createS3ClientFromUploadDetails(ctx context.Cont
 			"", // token
 		)),
 		config.WithRegion("us-east-1"), // default region
+		config.WithHTTPClient(&http.Client{
+			Timeout: 30 * time.Second, // 30 second timeout for all HTTP operations
+		}),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
