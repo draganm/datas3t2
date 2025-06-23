@@ -33,7 +33,7 @@ func (r *AddDatas3tRequest) Validate(ctx context.Context) error {
 	return nil
 }
 
-func (s *AddDatas3tServer) AddDatas3t(ctx context.Context, log *slog.Logger, req *AddDatas3tRequest) (err error) {
+func (s *Datas3tServer) AddDatas3t(ctx context.Context, log *slog.Logger, req *AddDatas3tRequest) (err error) {
 
 	log = log.With("bucket", req.Bucket, "name", req.Name)
 	log.Info("Adding datas3t")

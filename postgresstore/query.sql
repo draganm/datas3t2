@@ -6,6 +6,21 @@ FROM datasets;
 SELECT name
 FROM datasets;
 
+-- name: ListDatas3ts :many
+SELECT 
+    d.name as dataset_name,
+    s.name as bucket_name,
+    COALESCE(COUNT(dr.id), 0) as datarange_count,
+    COALESCE(SUM(dr.max_datapoint_key - dr.min_datapoint_key + 1), 0) as total_datapoints,
+    COALESCE(MIN(dr.min_datapoint_key), 0) as lowest_datapoint,
+    COALESCE(MAX(dr.max_datapoint_key), 0) as highest_datapoint,
+    COALESCE(SUM(dr.size_bytes), 0) as total_bytes
+FROM datasets d
+JOIN s3_buckets s ON d.s3_bucket_id = s.id
+LEFT JOIN dataranges dr ON d.id = dr.dataset_id
+GROUP BY d.id, d.name, s.name
+ORDER BY d.name;
+
 -- name: BucketExists :one
 SELECT count(*) > 0
 FROM s3_buckets

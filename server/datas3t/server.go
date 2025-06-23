@@ -4,10 +4,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type AddDatas3tServer struct {
+type Datas3tServer struct {
 	db *pgxpool.Pool
 }
 
-func NewServer(db *pgxpool.Pool) *AddDatas3tServer {
-	return &AddDatas3tServer{db: db}
+func NewServer(db *pgxpool.Pool) *Datas3tServer {
+	return &Datas3tServer{db: db}
 }

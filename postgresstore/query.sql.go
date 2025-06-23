@@ -587,6 +587,60 @@ func (q *Queries) ListAllBuckets(ctx context.Context) ([]ListAllBucketsRow, erro
 	return items, nil
 }
 
+const listDatas3ts = `-- name: ListDatas3ts :many
+SELECT 
+    d.name as dataset_name,
+    s.name as bucket_name,
+    COALESCE(COUNT(dr.id), 0) as datarange_count,
+    COALESCE(SUM(dr.max_datapoint_key - dr.min_datapoint_key + 1), 0) as total_datapoints,
+    COALESCE(MIN(dr.min_datapoint_key), 0) as lowest_datapoint,
+    COALESCE(MAX(dr.max_datapoint_key), 0) as highest_datapoint,
+    COALESCE(SUM(dr.size_bytes), 0) as total_bytes
+FROM datasets d
+JOIN s3_buckets s ON d.s3_bucket_id = s.id
+LEFT JOIN dataranges dr ON d.id = dr.dataset_id
+GROUP BY d.id, d.name, s.name
+ORDER BY d.name
+`
+
+type ListDatas3tsRow struct {
+	DatasetName      string
+	BucketName       string
+	DatarangeCount   interface{}
+	TotalDatapoints  interface{}
+	LowestDatapoint  interface{}
+	HighestDatapoint interface{}
+	TotalBytes       interface{}
+}
+
+func (q *Queries) ListDatas3ts(ctx context.Context) ([]ListDatas3tsRow, error) {
+	rows, err := q.db.Query(ctx, listDatas3ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDatas3tsRow
+	for rows.Next() {
+		var i ListDatas3tsRow
+		if err := rows.Scan(
+			&i.DatasetName,
+			&i.BucketName,
+			&i.DatarangeCount,
+			&i.TotalDatapoints,
+			&i.LowestDatapoint,
+			&i.HighestDatapoint,
+			&i.TotalBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scheduleKeyForDeletion = `-- name: ScheduleKeyForDeletion :exec
 INSERT INTO keys_to_delete (presigned_delete_url, delete_after)
 VALUES ($1, $2)
