@@ -1,7 +1,6 @@
 package datas3t_test
 
 import (
-	"context"
 	"log"
 	"log/slog"
 	"strings"
@@ -26,8 +25,6 @@ import (
 
 var _ = Describe("AddDatas3t", func() {
 	var (
-		ctx                  context.Context
-		cancel               context.CancelFunc
 		pgContainer          *tc_postgres.PostgresContainer
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
@@ -42,8 +39,7 @@ var _ = Describe("AddDatas3t", func() {
 		logger               *slog.Logger
 	)
 
-	BeforeEach(func() {
-		ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
+	BeforeEach(func(ctx SpecContext) {
 
 		var err error
 
@@ -136,7 +132,7 @@ var _ = Describe("AddDatas3t", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	AfterEach(func() {
+	AfterEach(func(ctx SpecContext) {
 		if db != nil {
 			db.Close()
 		}
@@ -148,11 +144,10 @@ var _ = Describe("AddDatas3t", func() {
 			err := minioContainer.Terminate(ctx)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		cancel()
 	})
 
 	Context("when adding a valid dataset", func() {
-		It("should successfully add the dataset to the database", func() {
+		It("should successfully add the dataset to the database", func(ctx SpecContext) {
 			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "test-dataset",
@@ -168,7 +163,7 @@ var _ = Describe("AddDatas3t", func() {
 			Expect(datasets).To(ContainElement("test-dataset"))
 		})
 
-		It("should handle dataset names with allowed characters", func() {
+		It("should handle dataset names with allowed characters", func(ctx SpecContext) {
 			validNames := []string{
 				"test-dataset-123",
 				"test_dataset_456",
@@ -197,7 +192,7 @@ var _ = Describe("AddDatas3t", func() {
 			}
 		})
 
-		It("should allow multiple datasets for the same bucket", func() {
+		It("should allow multiple datasets for the same bucket", func(ctx SpecContext) {
 			datasetReq1 := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "test-dataset-1",
@@ -224,7 +219,7 @@ var _ = Describe("AddDatas3t", func() {
 	})
 
 	Context("when validation fails", func() {
-		It("should reject invalid dataset names", func() {
+		It("should reject invalid dataset names", func(ctx SpecContext) {
 			invalidNames := []string{
 				"test@dataset",
 				"test dataset",
@@ -247,7 +242,7 @@ var _ = Describe("AddDatas3t", func() {
 			}
 		})
 
-		It("should reject empty dataset name", func() {
+		It("should reject empty dataset name", func(ctx SpecContext) {
 			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "",
@@ -258,7 +253,7 @@ var _ = Describe("AddDatas3t", func() {
 			Expect(err.Error()).To(ContainSubstring("name is required"))
 		})
 
-		It("should reject empty bucket name", func() {
+		It("should reject empty bucket name", func(ctx SpecContext) {
 			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: "",
 				Name:   "test-dataset",
@@ -269,7 +264,7 @@ var _ = Describe("AddDatas3t", func() {
 			Expect(err.Error()).To(ContainSubstring("bucket is required"))
 		})
 
-		It("should reject non-existent bucket", func() {
+		It("should reject non-existent bucket", func(ctx SpecContext) {
 			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: "non-existent-bucket",
 				Name:   "test-dataset",
@@ -282,7 +277,7 @@ var _ = Describe("AddDatas3t", func() {
 	})
 
 	Context("when handling database constraints", func() {
-		It("should reject duplicate dataset names", func() {
+		It("should reject duplicate dataset names", func(ctx SpecContext) {
 			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "duplicate-dataset",
@@ -298,7 +293,7 @@ var _ = Describe("AddDatas3t", func() {
 			Expect(err.Error()).To(ContainSubstring("failed to add datas3t"))
 		})
 
-		It("should reject duplicate dataset names even with different buckets", func() {
+		It("should reject duplicate dataset names even with different buckets", func(ctx SpecContext) {
 			// Create another test bucket configuration
 			anotherBucketName := "another-test-bucket"
 			anotherBucketConfigName := "another-test-bucket-config"
