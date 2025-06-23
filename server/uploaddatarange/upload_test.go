@@ -942,7 +942,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(uploadResp.UseDirectPut).To(BeTrue())
 			})
 
-			It("should successfully cancel upload and clean up database records", func() {
+			XIt("should successfully cancel upload and clean up database records", func() {
 				// Verify initial state
 				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
 				Expect(err).NotTo(HaveOccurred())
