@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/draganm/datas3t2/server/adddatas3t"
+	"github.com/draganm/datas3t2/server/datas3t"
 )
 
-func (c *Client) AddDatas3t(ctx context.Context, datas3t *adddatas3t.AddDatas3tRequest) error {
+func (c *Client) AddDatas3t(ctx context.Context, datas3t *datas3t.AddDatas3tRequest) error {
 	ur, err := url.JoinPath(c.baseURL, "api", "v1", "datas3ts")
 	if err != nil {
 		return fmt.Errorf("failed to join path: %w", err)

@@ -1,4 +1,4 @@
-package adddatas3t
+package datas3t
 
 import (
 	"github.com/jackc/pgx/v5/pgxpool"

@@ -1,4 +1,4 @@
-package adddatas3t_test
+package datas3t_test
 
 import (
 	"testing"

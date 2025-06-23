@@ -18,8 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/draganm/datas3t2/postgresstore"
-	"github.com/draganm/datas3t2/server/adddatas3t"
 	"github.com/draganm/datas3t2/server/bucket"
+	"github.com/draganm/datas3t2/server/datas3t"
 	"github.com/draganm/datas3t2/server/uploaddatarange"
 	"github.com/draganm/datas3t2/tarindex"
 	"github.com/golang-migrate/migrate/v4"
@@ -145,7 +145,7 @@ var _ = Describe("UploadDatarange", func() {
 		queries              *postgresstore.Queries
 		uploadSrv            *uploaddatarange.UploadDatarangeServer
 		bucketSrv            *bucket.BucketServer
-		datasetSrv           *adddatas3t.AddDatas3tServer
+		datasetSrv           *datas3t.AddDatas3tServer
 		minioEndpoint        string
 		minioHost            string
 		minioAccessKey       string
@@ -268,7 +268,7 @@ var _ = Describe("UploadDatarange", func() {
 		// Create server instances
 		uploadSrv = uploaddatarange.NewServer(db)
 		bucketSrv = bucket.NewServer(db)
-		datasetSrv = adddatas3t.NewServer(db)
+		datasetSrv = datas3t.NewServer(db)
 
 		// Add test bucket configuration
 		bucketInfo := &bucket.BucketInfo{
@@ -284,7 +284,7 @@ var _ = Describe("UploadDatarange", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Add test dataset
-		datasetReq := &adddatas3t.AddDatas3tRequest{
+		datasetReq := &datas3t.AddDatas3tRequest{
 			Bucket: testBucketConfigName,
 			Name:   testDatasetName,
 		}

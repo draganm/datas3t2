@@ -1,4 +1,4 @@
-package adddatas3t
+package datas3t
 
 import (
 	"context"

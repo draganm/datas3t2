@@ -1,4 +1,4 @@
-package adddatas3t_test
+package datas3t_test
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/draganm/datas3t2/postgresstore"
-	"github.com/draganm/datas3t2/server/adddatas3t"
 	"github.com/draganm/datas3t2/server/bucket"
+	"github.com/draganm/datas3t2/server/datas3t"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -31,7 +31,7 @@ var _ = Describe("AddDatas3t", func() {
 		pgContainer          *tc_postgres.PostgresContainer
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
-		srv                  *adddatas3t.AddDatas3tServer
+		srv                  *datas3t.AddDatas3tServer
 		bucketSrv            *bucket.BucketServer
 		minioEndpoint        string
 		minioHost            string
@@ -119,7 +119,7 @@ var _ = Describe("AddDatas3t", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create server instances
-		srv = adddatas3t.NewServer(db)
+		srv = datas3t.NewServer(db)
 		bucketSrv = bucket.NewServer(db)
 
 		// Add a test bucket configuration that datasets can use
@@ -153,7 +153,7 @@ var _ = Describe("AddDatas3t", func() {
 
 	Context("when adding a valid dataset", func() {
 		It("should successfully add the dataset to the database", func() {
-			datasetReq := &adddatas3t.AddDatas3tRequest{
+			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "test-dataset",
 			}
@@ -178,7 +178,7 @@ var _ = Describe("AddDatas3t", func() {
 			}
 
 			for _, name := range validNames {
-				datasetReq := &adddatas3t.AddDatas3tRequest{
+				datasetReq := &datas3t.AddDatas3tRequest{
 					Bucket: testBucketConfigName,
 					Name:   name,
 				}
@@ -198,12 +198,12 @@ var _ = Describe("AddDatas3t", func() {
 		})
 
 		It("should allow multiple datasets for the same bucket", func() {
-			datasetReq1 := &adddatas3t.AddDatas3tRequest{
+			datasetReq1 := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "test-dataset-1",
 			}
 
-			datasetReq2 := &adddatas3t.AddDatas3tRequest{
+			datasetReq2 := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "test-dataset-2",
 			}
@@ -236,7 +236,7 @@ var _ = Describe("AddDatas3t", func() {
 			}
 
 			for _, name := range invalidNames {
-				datasetReq := &adddatas3t.AddDatas3tRequest{
+				datasetReq := &datas3t.AddDatas3tRequest{
 					Bucket: testBucketConfigName,
 					Name:   name,
 				}
@@ -248,7 +248,7 @@ var _ = Describe("AddDatas3t", func() {
 		})
 
 		It("should reject empty dataset name", func() {
-			datasetReq := &adddatas3t.AddDatas3tRequest{
+			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "",
 			}
@@ -259,7 +259,7 @@ var _ = Describe("AddDatas3t", func() {
 		})
 
 		It("should reject empty bucket name", func() {
-			datasetReq := &adddatas3t.AddDatas3tRequest{
+			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: "",
 				Name:   "test-dataset",
 			}
@@ -270,7 +270,7 @@ var _ = Describe("AddDatas3t", func() {
 		})
 
 		It("should reject non-existent bucket", func() {
-			datasetReq := &adddatas3t.AddDatas3tRequest{
+			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: "non-existent-bucket",
 				Name:   "test-dataset",
 			}
@@ -283,7 +283,7 @@ var _ = Describe("AddDatas3t", func() {
 
 	Context("when handling database constraints", func() {
 		It("should reject duplicate dataset names", func() {
-			datasetReq := &adddatas3t.AddDatas3tRequest{
+			datasetReq := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "duplicate-dataset",
 			}
@@ -325,12 +325,12 @@ var _ = Describe("AddDatas3t", func() {
 			err = bucketSrv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).NotTo(HaveOccurred())
 
-			datasetReq1 := &adddatas3t.AddDatas3tRequest{
+			datasetReq1 := &datas3t.AddDatas3tRequest{
 				Bucket: testBucketConfigName,
 				Name:   "same-dataset-name",
 			}
 
-			datasetReq2 := &adddatas3t.AddDatas3tRequest{
+			datasetReq2 := &datas3t.AddDatas3tRequest{
 				Bucket: anotherBucketConfigName,
 				Name:   "same-dataset-name", // Same dataset name but different bucket
 			}
