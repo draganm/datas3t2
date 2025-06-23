@@ -1,4 +1,4 @@
-package uploaddatarange_test
+package dataranges_test
 
 import (
 	"testing"

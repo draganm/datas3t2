@@ -1,4 +1,4 @@
-package uploaddatarange
+package dataranges
 
 import (
 	"archive/tar"

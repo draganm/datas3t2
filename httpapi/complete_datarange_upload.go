@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/draganm/datas3t2/server/uploaddatarange"
+	"github.com/draganm/datas3t2/server/dataranges"
 )
 
 func (a *api) completeDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 
-	req := &uploaddatarange.CompleteUploadRequest{}
+	req := &dataranges.CompleteUploadRequest{}
 	err := json.NewDecoder(r.Body).Decode(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)

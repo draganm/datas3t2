@@ -1,4 +1,4 @@
-package uploaddatarange_test
+package dataranges_test
 
 import (
 	"bytes"
@@ -19,8 +19,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/draganm/datas3t2/postgresstore"
 	"github.com/draganm/datas3t2/server/bucket"
+	"github.com/draganm/datas3t2/server/dataranges"
 	"github.com/draganm/datas3t2/server/datas3t"
-	"github.com/draganm/datas3t2/server/uploaddatarange"
 	"github.com/draganm/datas3t2/tarindex"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -143,7 +143,7 @@ var _ = Describe("UploadDatarange", func() {
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
 		queries              *postgresstore.Queries
-		uploadSrv            *uploaddatarange.UploadDatarangeServer
+		uploadSrv            *dataranges.UploadDatarangeServer
 		bucketSrv            *bucket.BucketServer
 		datasetSrv           *datas3t.AddDatas3tServer
 		minioEndpoint        string
@@ -266,7 +266,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		// Create server instances
-		uploadSrv = uploaddatarange.NewServer(db)
+		uploadSrv = dataranges.NewServer(db)
 		bucketSrv = bucket.NewServer(db)
 		datasetSrv = datas3t.NewServer(db)
 
@@ -310,7 +310,7 @@ var _ = Describe("UploadDatarange", func() {
 	Context("StartDatarangeUpload", func() {
 		Context("when starting a valid small upload (direct PUT)", func() {
 			It("should successfully create upload with direct PUT URLs", func(ctx SpecContext) {
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024, // Small size < 5MB
 					NumberOfDatapoints:  10,
@@ -358,7 +358,7 @@ var _ = Describe("UploadDatarange", func() {
 
 		Context("when starting a valid large upload (multipart)", func() {
 			It("should successfully create upload with multipart URLs", func(ctx SpecContext) {
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            10 * 1024 * 1024, // 10MB > 5MB threshold
 					NumberOfDatapoints:  1000,
@@ -399,7 +399,7 @@ var _ = Describe("UploadDatarange", func() {
 
 		Context("when validation fails", func() {
 			It("should reject empty dataset name", func(ctx SpecContext) {
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         "",
 					DataSize:            1024,
 					NumberOfDatapoints:  10,
@@ -417,7 +417,7 @@ var _ = Describe("UploadDatarange", func() {
 			})
 
 			It("should reject zero data size", func(ctx SpecContext) {
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            0,
 					NumberOfDatapoints:  10,
@@ -435,7 +435,7 @@ var _ = Describe("UploadDatarange", func() {
 			})
 
 			It("should reject zero number of datapoints", func(ctx SpecContext) {
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
 					NumberOfDatapoints:  0,
@@ -453,7 +453,7 @@ var _ = Describe("UploadDatarange", func() {
 			})
 
 			It("should reject non-existent dataset", func(ctx SpecContext) {
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         "non-existent-dataset",
 					DataSize:            1024,
 					NumberOfDatapoints:  10,
@@ -474,7 +474,7 @@ var _ = Describe("UploadDatarange", func() {
 		Context("when handling overlapping dataranges", func() {
 			BeforeEach(func(ctx SpecContext) {
 				// Create an existing datarange from 0-99
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
 					NumberOfDatapoints:  100,
@@ -487,7 +487,7 @@ var _ = Describe("UploadDatarange", func() {
 
 			It("should reject overlapping ranges", func(ctx SpecContext) {
 				// Try to create overlapping range 50-149
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
 					NumberOfDatapoints:  100,
@@ -506,7 +506,7 @@ var _ = Describe("UploadDatarange", func() {
 
 			It("should allow adjacent ranges", func(ctx SpecContext) {
 				// Create adjacent range 100-199 (no overlap)
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
 					NumberOfDatapoints:  100,
@@ -525,13 +525,13 @@ var _ = Describe("UploadDatarange", func() {
 	})
 
 	Context("CompleteUpload", func() {
-		var uploadResp *uploaddatarange.UploadDatarangeResponse
+		var uploadResp *dataranges.UploadDatarangeResponse
 		var testData []byte
 		var testIndex []byte
 
 		BeforeEach(func(ctx SpecContext) {
 			// Start an upload
-			req := &uploaddatarange.UploadDatarangeRequest{
+			req := &dataranges.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
 				DataSize:            1024,
 				NumberOfDatapoints:  10,
@@ -566,7 +566,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -594,7 +594,7 @@ var _ = Describe("UploadDatarange", func() {
 				dataResp.Body.Close()
 
 				// Complete the upload (should fail)
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -627,7 +627,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload (should fail)
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -667,7 +667,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload (should fail)
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -690,13 +690,13 @@ var _ = Describe("UploadDatarange", func() {
 	})
 
 	Context("Multipart Upload Complete", func() {
-		var uploadResp *uploaddatarange.UploadDatarangeResponse
+		var uploadResp *dataranges.UploadDatarangeResponse
 		var testData []byte
 		var testIndex []byte
 
 		BeforeEach(func(ctx SpecContext) {
 			// Start a large upload that requires multipart
-			req := &uploaddatarange.UploadDatarangeRequest{
+			req := &dataranges.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
 				DataSize:            10 * 1024 * 1024, // 10MB
 				NumberOfDatapoints:  1000,
@@ -749,7 +749,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 					UploadIDs:         etags,
 				}
@@ -802,7 +802,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Try to complete with only one ETag (should fail)
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 					UploadIDs:         []string{etag}, // Missing second part
 				}
@@ -827,11 +827,11 @@ var _ = Describe("UploadDatarange", func() {
 
 	Context("CancelDatarangeUpload", func() {
 		Context("when cancelling a direct PUT upload", func() {
-			var uploadResp *uploaddatarange.UploadDatarangeResponse
+			var uploadResp *dataranges.UploadDatarangeResponse
 
 			BeforeEach(func(ctx SpecContext) {
 				// Start a small upload that uses direct PUT
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024, // Small size < 5MB
 					NumberOfDatapoints:  10,
@@ -855,7 +855,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(datarangeCount).To(Equal(int64(1)))
 
 				// Cancel the upload
-				cancelReq := &uploaddatarange.CancelUploadRequest{
+				cancelReq := &dataranges.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -880,11 +880,11 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when cancelling a multipart upload", func() {
-			var uploadResp *uploaddatarange.UploadDatarangeResponse
+			var uploadResp *dataranges.UploadDatarangeResponse
 
 			BeforeEach(func(ctx SpecContext) {
 				// Start a large upload that requires multipart
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            10 * 1024 * 1024, // 10MB
 					NumberOfDatapoints:  1000,
@@ -908,7 +908,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(datarangeCount).To(Equal(int64(1)))
 
 				// Cancel the upload
-				cancelReq := &uploaddatarange.CancelUploadRequest{
+				cancelReq := &dataranges.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -944,7 +944,7 @@ var _ = Describe("UploadDatarange", func() {
 				resp.Body.Close()
 
 				// Cancel the upload (should abort multipart and clean up)
-				cancelReq := &uploaddatarange.CancelUploadRequest{
+				cancelReq := &dataranges.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -969,7 +969,7 @@ var _ = Describe("UploadDatarange", func() {
 
 		Context("when validation fails", func() {
 			It("should reject non-existent upload ID", func(ctx SpecContext) {
-				cancelReq := &uploaddatarange.CancelUploadRequest{
+				cancelReq := &dataranges.CancelUploadRequest{
 					DatarangeUploadID: 999999, // Non-existent ID
 				}
 
@@ -980,11 +980,11 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when upload has already been cancelled", func() {
-			var uploadResp *uploaddatarange.UploadDatarangeResponse
+			var uploadResp *dataranges.UploadDatarangeResponse
 
 			BeforeEach(func(ctx SpecContext) {
 				// Start an upload
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
 					NumberOfDatapoints:  10,
@@ -996,7 +996,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Cancel it once
-				cancelReq := &uploaddatarange.CancelUploadRequest{
+				cancelReq := &dataranges.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
@@ -1005,7 +1005,7 @@ var _ = Describe("UploadDatarange", func() {
 
 			It("should return error when trying to cancel again", func(ctx SpecContext) {
 				// Try to cancel again
-				cancelReq := &uploaddatarange.CancelUploadRequest{
+				cancelReq := &dataranges.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -1017,7 +1017,7 @@ var _ = Describe("UploadDatarange", func() {
 	})
 
 	Context("Tar Index Validation", func() {
-		var uploadResp *uploaddatarange.UploadDatarangeResponse
+		var uploadResp *dataranges.UploadDatarangeResponse
 		var properTarData []byte
 		var properTarIndex []byte
 
@@ -1026,7 +1026,7 @@ var _ = Describe("UploadDatarange", func() {
 			properTarData, properTarIndex = createProperTarWithIndex(5, 0) // 5 files starting from index 0
 
 			// Start an upload with the correct size
-			req := &uploaddatarange.UploadDatarangeRequest{
+			req := &dataranges.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
 				DataSize:            uint64(len(properTarData)),
 				NumberOfDatapoints:  5,
@@ -1053,7 +1053,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload - should succeed with validation
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -1085,7 +1085,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload - should fail during validation
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
@@ -1101,13 +1101,13 @@ var _ = Describe("UploadDatarange", func() {
 				invalidTarData, invalidTarIndex := createTarWithInvalidNames()
 
 				// Update the upload request with correct size for the invalid tar
-				err := uploadSrv.CancelDatarangeUpload(ctx, logger, &uploaddatarange.CancelUploadRequest{
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, &dataranges.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				})
 				Expect(err).NotTo(HaveOccurred())
 
 				// Start a new upload with correct size
-				req := &uploaddatarange.UploadDatarangeRequest{
+				req := &dataranges.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            uint64(len(invalidTarData)),
 					NumberOfDatapoints:  3,
@@ -1130,7 +1130,7 @@ var _ = Describe("UploadDatarange", func() {
 				indexResp.Body.Close()
 
 				// Complete the upload - should fail during validation
-				completeReq := &uploaddatarange.CompleteUploadRequest{
+				completeReq := &dataranges.CompleteUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 

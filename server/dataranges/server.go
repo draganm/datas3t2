@@ -1,4 +1,4 @@
-package uploaddatarange
+package dataranges
 
 import (
 	"github.com/jackc/pgx/v5/pgxpool"

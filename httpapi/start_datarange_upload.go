@@ -5,12 +5,12 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/draganm/datas3t2/server/uploaddatarange"
+	"github.com/draganm/datas3t2/server/dataranges"
 )
 
 func (a *api) startDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 
-	req := &uploaddatarange.UploadDatarangeRequest{}
+	req := &dataranges.UploadDatarangeRequest{}
 	err := json.NewDecoder(r.Body).Decode(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -25,7 +25,7 @@ func (a *api) startDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := a.s.StartDatarangeUpload(r.Context(), a.log, req)
 	switch {
-	case errors.Is(err, uploaddatarange.ErrDatarangeOverlap):
+	case errors.Is(err, dataranges.ErrDatarangeOverlap):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	case err != nil:

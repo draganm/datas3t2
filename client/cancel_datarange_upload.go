@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/draganm/datas3t2/server/uploaddatarange"
+	"github.com/draganm/datas3t2/server/dataranges"
 )
 
-func (c *Client) CancelDatarangeUpload(ctx context.Context, r *uploaddatarange.CancelUploadRequest) error {
+func (c *Client) CancelDatarangeUpload(ctx context.Context, r *dataranges.CancelUploadRequest) error {
 	body, err := json.Marshal(r)
 	if err != nil {
 		return err

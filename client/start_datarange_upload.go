@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/draganm/datas3t2/server/uploaddatarange"
+	"github.com/draganm/datas3t2/server/dataranges"
 )
 
-func (c *Client) StartDatarangeUpload(ctx context.Context, r *uploaddatarange.UploadDatarangeRequest) (*uploaddatarange.UploadDatarangeResponse, error) {
+func (c *Client) StartDatarangeUpload(ctx context.Context, r *dataranges.UploadDatarangeRequest) (*dataranges.UploadDatarangeResponse, error) {
 	ur, err := url.JoinPath(c.baseURL, "api", "v1", "upload-datarange")
 	if err != nil {
 		return nil, fmt.Errorf("failed to join path: %w", err)
@@ -42,7 +42,7 @@ func (c *Client) StartDatarangeUpload(ctx context.Context, r *uploaddatarange.Up
 		return nil, fmt.Errorf("failed to add datas3t: %s: %s", resp.Status, string(body))
 	}
 
-	var respBody uploaddatarange.UploadDatarangeResponse
+	var respBody dataranges.UploadDatarangeResponse
 	err = json.NewDecoder(resp.Body).Decode(&respBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
