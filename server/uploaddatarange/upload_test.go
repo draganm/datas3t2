@@ -2,7 +2,6 @@ package uploaddatarange_test
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"log"
@@ -139,8 +138,6 @@ func createTarWithInvalidNames() ([]byte, []byte) {
 
 var _ = Describe("UploadDatarange", func() {
 	var (
-		ctx                  context.Context
-		cancel               context.CancelFunc
 		pgContainer          *tc_postgres.PostgresContainer
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
@@ -158,8 +155,7 @@ var _ = Describe("UploadDatarange", func() {
 		logger               *slog.Logger
 	)
 
-	BeforeEach(func() {
-		ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
+	BeforeEach(func(ctx SpecContext) {
 
 		// Create logger that writes to GinkgoWriter for test visibility
 		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{
@@ -292,7 +288,7 @@ var _ = Describe("UploadDatarange", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	AfterEach(func() {
+	AfterEach(func(ctx SpecContext) {
 		if db != nil {
 			db.Close()
 		}
@@ -304,12 +300,11 @@ var _ = Describe("UploadDatarange", func() {
 			err := minioContainer.Terminate(ctx)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		cancel()
 	})
 
 	Context("StartDatarangeUpload", func() {
 		Context("when starting a valid small upload (direct PUT)", func() {
-			It("should successfully create upload with direct PUT URLs", func() {
+			It("should successfully create upload with direct PUT URLs", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024, // Small size < 5MB
@@ -366,7 +361,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when starting a valid large upload (multipart)", func() {
-			It("should successfully create upload with multipart URLs", func() {
+			It("should successfully create upload with multipart URLs", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            10 * 1024 * 1024, // 10MB > 5MB threshold
@@ -413,7 +408,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when validation fails", func() {
-			It("should reject empty dataset name", func() {
+			It("should reject empty dataset name", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         "",
 					DataSize:            1024,
@@ -436,7 +431,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(datarangeCount).To(Equal(0))
 			})
 
-			It("should reject zero data size", func() {
+			It("should reject zero data size", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            0,
@@ -459,7 +454,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(datarangeCount).To(Equal(0))
 			})
 
-			It("should reject zero number of datapoints", func() {
+			It("should reject zero number of datapoints", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
@@ -482,7 +477,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(datarangeCount).To(Equal(0))
 			})
 
-			It("should reject non-existent dataset", func() {
+			It("should reject non-existent dataset", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         "non-existent-dataset",
 					DataSize:            1024,
@@ -507,7 +502,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when handling overlapping dataranges", func() {
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Create an existing datarange from 0-99
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -520,7 +515,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should reject overlapping ranges", func() {
+			It("should reject overlapping ranges", func(ctx SpecContext) {
 				// Try to create overlapping range 50-149
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -544,7 +539,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(datarangeCount).To(Equal(1))
 			})
 
-			It("should allow adjacent ranges", func() {
+			It("should allow adjacent ranges", func(ctx SpecContext) {
 				// Create adjacent range 100-199 (no overlap)
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -574,7 +569,7 @@ var _ = Describe("UploadDatarange", func() {
 		var testData []byte
 		var testIndex []byte
 
-		BeforeEach(func() {
+		BeforeEach(func(ctx SpecContext) {
 			// Start an upload
 			req := &uploaddatarange.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
@@ -597,7 +592,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when completing a successful direct PUT upload", func() {
-			It("should complete successfully with both files uploaded", func() {
+			It("should complete successfully with both files uploaded", func(ctx SpecContext) {
 				// Upload data file
 				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(testData))
 				Expect(err).NotTo(HaveOccurred())
@@ -641,7 +636,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when index file is missing", func() {
-			It("should fail and schedule cleanup", func() {
+			It("should fail and schedule cleanup", func(ctx SpecContext) {
 				// Upload only data file (no index)
 				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(testData))
 				Expect(err).NotTo(HaveOccurred())
@@ -689,7 +684,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when data file is missing", func() {
-			It("should fail and schedule cleanup", func() {
+			It("should fail and schedule cleanup", func(ctx SpecContext) {
 				// Upload only index file (no data)
 				indexResp, err := httpPut(uploadResp.PresignedIndexPutURL, bytes.NewReader(testIndex))
 				Expect(err).NotTo(HaveOccurred())
@@ -728,7 +723,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when data size is wrong", func() {
-			It("should fail and schedule cleanup", func() {
+			It("should fail and schedule cleanup", func(ctx SpecContext) {
 				// Upload wrong size data
 				wrongSizeData := make([]byte, 512) // Expected 1024, uploading 512
 				for i := range wrongSizeData {
@@ -784,7 +779,7 @@ var _ = Describe("UploadDatarange", func() {
 		var testData []byte
 		var testIndex []byte
 
-		BeforeEach(func() {
+		BeforeEach(func(ctx SpecContext) {
 			// Start a large upload that requires multipart
 			req := &uploaddatarange.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
@@ -808,7 +803,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when completing a successful multipart upload", func() {
-			It("should complete successfully with all parts uploaded", func() {
+			It("should complete successfully with all parts uploaded", func(ctx SpecContext) {
 				// Upload all parts
 				partSize := 5 * 1024 * 1024 // 5MB per part
 				var etags []string
@@ -882,7 +877,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when multipart upload fails due to missing parts", func() {
-			It("should fail to complete with incomplete parts", func() {
+			It("should fail to complete with incomplete parts", func(ctx SpecContext) {
 				// Upload only the first part (missing second part)
 				partSize := 5 * 1024 * 1024 // 5MB per part
 				partData := testData[:partSize]
@@ -939,7 +934,7 @@ var _ = Describe("UploadDatarange", func() {
 		Context("when cancelling a direct PUT upload", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Start a small upload that uses direct PUT
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -954,7 +949,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(uploadResp.UseDirectPut).To(BeTrue())
 			})
 
-			It("should successfully cancel upload and clean up database records", func() {
+			It("should successfully cancel upload and clean up database records", func(ctx SpecContext) {
 				// Verify initial state
 				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
 				Expect(err).NotTo(HaveOccurred())
@@ -1017,7 +1012,7 @@ var _ = Describe("UploadDatarange", func() {
 		Context("when cancelling a multipart upload", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Start a large upload that requires multipart
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -1032,7 +1027,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(uploadResp.UseDirectPut).To(BeFalse())
 			})
 
-			It("should successfully cancel multipart upload and clean up database records", func() {
+			It("should successfully cancel multipart upload and clean up database records", func(ctx SpecContext) {
 				// Verify initial state
 				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
 				Expect(err).NotTo(HaveOccurred())
@@ -1091,7 +1086,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
 			})
 
-			It("should handle partial uploads by cancelling and cleaning up properly", func() {
+			It("should handle partial uploads by cancelling and cleaning up properly", func(ctx SpecContext) {
 				// Upload one part to simulate partial upload
 				testData := make([]byte, 5*1024*1024) // 5MB for first part
 				for i := range testData {
@@ -1143,7 +1138,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when validation fails", func() {
-			It("should reject non-existent upload ID", func() {
+			It("should reject non-existent upload ID", func(ctx SpecContext) {
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: 999999, // Non-existent ID
 				}
@@ -1157,7 +1152,7 @@ var _ = Describe("UploadDatarange", func() {
 		Context("when upload has already been cancelled", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Start an upload
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -1178,7 +1173,7 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should return error when trying to cancel again", func() {
+			It("should return error when trying to cancel again", func(ctx SpecContext) {
 				// Try to cancel again
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
@@ -1196,7 +1191,7 @@ var _ = Describe("UploadDatarange", func() {
 		var properTarData []byte
 		var properTarIndex []byte
 
-		BeforeEach(func() {
+		BeforeEach(func(ctx SpecContext) {
 			// Create a proper TAR archive with correctly named files
 			properTarData, properTarIndex = createProperTarWithIndex(5, 0) // 5 files starting from index 0
 
@@ -1214,7 +1209,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when tar validation succeeds", func() {
-			It("should validate proper tar files with correct index", func() {
+			It("should validate proper tar files with correct index", func(ctx SpecContext) {
 				// Upload proper tar data
 				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(properTarData))
 				Expect(err).NotTo(HaveOccurred())
@@ -1248,7 +1243,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when tar validation fails due to size mismatch", func() {
-			It("should reject tar with incorrect size", func() {
+			It("should reject tar with incorrect size", func(ctx SpecContext) {
 				// Create tar data with wrong size (truncate it)
 				wrongSizeTarData := properTarData[:len(properTarData)-100]
 
@@ -1276,7 +1271,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when tar validation fails due to invalid file names", func() {
-			It("should reject tar with incorrectly named files", func() {
+			It("should reject tar with incorrectly named files", func(ctx SpecContext) {
 				// Create tar with wrong file names
 				invalidTarData, invalidTarIndex := createTarWithInvalidNames()
 
