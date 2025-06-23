@@ -15,5 +15,11 @@ func (a *api) cancelDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.s.CancelDatarangeUpload(r.Context(), req)
+	err = a.s.CancelDatarangeUpload(r.Context(), a.log, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

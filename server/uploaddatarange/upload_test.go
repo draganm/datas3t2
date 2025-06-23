@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -154,10 +155,16 @@ var _ = Describe("UploadDatarange", func() {
 		testBucketConfigName string
 		testDatasetName      string
 		s3Client             *s3.Client
+		logger               *slog.Logger
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
+
+		// Create logger that writes to GinkgoWriter for test visibility
+		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
 
 		var err error
 
@@ -272,7 +279,7 @@ var _ = Describe("UploadDatarange", func() {
 			UseTLS:    false,
 		}
 
-		err = bucketSrv.AddBucket(ctx, bucketInfo)
+		err = bucketSrv.AddBucket(ctx, logger, bucketInfo)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Add test dataset
@@ -281,7 +288,7 @@ var _ = Describe("UploadDatarange", func() {
 			Name:   testDatasetName,
 		}
 
-		err = datasetSrv.AddDatas3t(ctx, datasetReq)
+		err = datasetSrv.AddDatas3t(ctx, logger, datasetReq)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -310,7 +317,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				resp, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				resp, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp).NotTo(BeNil())
 				Expect(resp.UseDirectPut).To(BeTrue())
@@ -367,7 +374,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 100,
 				}
 
-				resp, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				resp, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp).NotTo(BeNil())
 				Expect(resp.UseDirectPut).To(BeFalse())
@@ -414,7 +421,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("datas3t_name is required"))
 
@@ -437,7 +444,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("data_size must be greater than 0"))
 
@@ -460,7 +467,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("number_of_datapoints must be greater than 0"))
 
@@ -483,7 +490,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to find dataset 'non-existent-dataset'"))
 
@@ -509,7 +516,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -522,7 +529,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 50,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("datarange overlaps with existing dataranges"))
 
@@ -546,7 +553,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 100,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify two dataranges exist
@@ -577,7 +584,7 @@ var _ = Describe("UploadDatarange", func() {
 			}
 
 			var err error
-			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Prepare test data
@@ -608,7 +615,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
@@ -646,7 +653,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("index file not found"))
 
@@ -694,7 +701,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get uploaded object info"))
 
@@ -744,7 +751,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
 				Expect(err.Error()).To(ContainSubstring("expected 1024, got 512"))
@@ -787,7 +794,7 @@ var _ = Describe("UploadDatarange", func() {
 			}
 
 			var err error
-			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(uploadResp.UseDirectPut).To(BeFalse())
 
@@ -837,7 +844,7 @@ var _ = Describe("UploadDatarange", func() {
 					UploadIDs:         etags,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
@@ -900,7 +907,7 @@ var _ = Describe("UploadDatarange", func() {
 					UploadIDs:         []string{etag}, // Missing second part
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				// When only partial data is uploaded, it fails with size mismatch before multipart completion
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
@@ -942,7 +949,7 @@ var _ = Describe("UploadDatarange", func() {
 				}
 
 				var err error
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(uploadResp.UseDirectPut).To(BeTrue())
 			})
@@ -972,7 +979,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
@@ -1020,7 +1027,7 @@ var _ = Describe("UploadDatarange", func() {
 				}
 
 				var err error
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(uploadResp.UseDirectPut).To(BeFalse())
 			})
@@ -1050,7 +1057,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
@@ -1101,7 +1108,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify database cleanup
@@ -1141,7 +1148,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: 999999, // Non-existent ID
 				}
 
-				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
 			})
@@ -1160,14 +1167,14 @@ var _ = Describe("UploadDatarange", func() {
 				}
 
 				var err error
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Cancel it once
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -1177,7 +1184,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
 			})
@@ -1202,7 +1209,7 @@ var _ = Describe("UploadDatarange", func() {
 			}
 
 			var err error
-			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -1225,7 +1232,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload completed successfully
@@ -1262,7 +1269,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
 			})
@@ -1274,7 +1281,7 @@ var _ = Describe("UploadDatarange", func() {
 				invalidTarData, invalidTarIndex := createTarWithInvalidNames()
 
 				// Update the upload request with correct size for the invalid tar
-				err := uploadSrv.CancelDatarangeUpload(ctx, &uploaddatarange.CancelUploadRequest{
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				})
 				Expect(err).NotTo(HaveOccurred())
@@ -1287,7 +1294,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Upload invalid tar data
@@ -1307,7 +1314,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("tar index validation failed"))
 				Expect(err.Error()).To(ContainSubstring("invalid file name format"))

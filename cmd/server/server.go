@@ -97,7 +97,7 @@ func main() {
 
 			s := server.NewServer(db)
 
-			mux := httpapi.NewHTTPAPI(s)
+			mux := httpapi.NewHTTPAPI(s, logger)
 
 			srv := &http.Server{
 				Handler: mux,

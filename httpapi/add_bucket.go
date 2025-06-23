@@ -16,7 +16,7 @@ func (a *api) addBucket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.s.AddBucket(r.Context(), &req)
+	err = a.s.AddBucket(r.Context(), a.log, &req)
 	if err != nil {
 		var validationErr addbucket.ValidationError
 		if errors.As(err, &validationErr) {

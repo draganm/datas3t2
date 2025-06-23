@@ -3,6 +3,7 @@ package uploaddatarange
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,7 +16,22 @@ type CancelUploadRequest struct {
 	DatarangeUploadID int64 `json:"datarange_upload_id"`
 }
 
-func (s *UploadDatarangeServer) CancelDatarangeUpload(ctx context.Context, req *CancelUploadRequest) error {
+func (s *UploadDatarangeServer) CancelDatarangeUpload(
+	ctx context.Context,
+	log *slog.Logger,
+	req *CancelUploadRequest,
+) (err error) {
+	log = log.With("datarange_upload_id", req.DatarangeUploadID)
+	log.Info("Cancelling datarange upload")
+
+	defer func() {
+		if err != nil {
+			log.Error("Failed to cancel datarange upload", "error", err)
+		} else {
+			log.Info("Datarange upload cancelled")
+		}
+	}()
+
 	// Start a transaction for atomic operations
 	tx, err := s.db.Begin(ctx)
 	if err != nil {

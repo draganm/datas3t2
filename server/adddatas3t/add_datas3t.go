@@ -3,6 +3,7 @@ package adddatas3t
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 
 	"github.com/draganm/datas3t2/postgresstore"
@@ -32,8 +33,20 @@ func (r *AddDatas3tRequest) Validate(ctx context.Context) error {
 	return nil
 }
 
-func (s *AddDatas3tServer) AddDatas3t(ctx context.Context, req *AddDatas3tRequest) error {
-	err := req.Validate(ctx)
+func (s *AddDatas3tServer) AddDatas3t(ctx context.Context, log *slog.Logger, req *AddDatas3tRequest) (err error) {
+
+	log = log.With("bucket", req.Bucket, "name", req.Name)
+	log.Info("Adding datas3t")
+
+	defer func() {
+		if err != nil {
+			log.Error("Failed to add datas3t", "error", err)
+		} else {
+			log.Info("Datas3t added")
+		}
+	}()
+
+	err = req.Validate(ctx)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -27,7 +28,18 @@ type CompleteUploadRequest struct {
 	UploadIDs         []string `json:"upload_ids,omitempty"` // Only used for multipart uploads
 }
 
-func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, req *CompleteUploadRequest) error {
+func (s *UploadDatarangeServer) CompleteDatarangeUpload(ctx context.Context, log *slog.Logger, req *CompleteUploadRequest) (err error) {
+	log = log.With("datarange_upload_id", req.DatarangeUploadID)
+	log.Info("Completing datarange upload")
+
+	defer func() {
+		if err != nil {
+			log.Error("Failed to complete datarange upload", "error", err)
+		} else {
+			log.Info("Datarange upload completed successfully")
+		}
+	}()
+
 	// 1. Get datarange upload details (read-only operation)
 	queries := postgresstore.New(s.db)
 	uploadDetails, err := queries.GetDatarangeUploadWithDetails(ctx, req.DatarangeUploadID)
