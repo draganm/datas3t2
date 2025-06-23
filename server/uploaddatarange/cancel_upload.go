@@ -3,6 +3,7 @@ package uploaddatarange
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -15,7 +16,22 @@ type CancelUploadRequest struct {
 	DatarangeUploadID int64 `json:"datarange_upload_id"`
 }
 
-func (s *UploadDatarangeServer) CancelDatarangeUpload(ctx context.Context, req *CancelUploadRequest) error {
+func (s *UploadDatarangeServer) CancelDatarangeUpload(
+	ctx context.Context,
+	log *slog.Logger,
+	req *CancelUploadRequest,
+) (err error) {
+	log = log.With("datarange_upload_id", req.DatarangeUploadID)
+	log.Info("Cancelling datarange upload")
+
+	defer func() {
+		if err != nil {
+			log.Error("Failed to cancel datarange upload", "error", err)
+		} else {
+			log.Info("Datarange upload cancelled")
+		}
+	}()
+
 	// Start a transaction for atomic operations
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -34,15 +50,19 @@ func (s *UploadDatarangeServer) CancelDatarangeUpload(ctx context.Context, req *
 		return fmt.Errorf("failed to create S3 client: %w", err)
 	}
 
+	// Create a timeout context for S3 operations (separate from main context)
+	s3Ctx, s3Cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer s3Cancel()
+
 	if uploadDetails.UploadID == "DIRECT_PUT" {
 		// For direct PUT uploads, schedule deletion of the data and index objects
-		err = s.scheduleObjectsForDeletion(ctx, queries, s3Client, uploadDetails, uploadDetails.IndexObjectKey)
+		err = s.scheduleObjectsForDeletion(s3Ctx, queries, s3Client, uploadDetails, uploadDetails.IndexObjectKey)
 		if err != nil {
 			return fmt.Errorf("failed to schedule cleanup for direct PUT upload: %w", err)
 		}
 	} else {
 		// For multipart uploads, abort the upload and schedule cleanup
-		_, err = s3Client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		_, err = s3Client.AbortMultipartUpload(s3Ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   aws.String(uploadDetails.Bucket),
 			Key:      aws.String(uploadDetails.DataObjectKey),
 			UploadId: aws.String(uploadDetails.UploadID),
@@ -52,20 +72,20 @@ func (s *UploadDatarangeServer) CancelDatarangeUpload(ctx context.Context, req *
 		}
 
 		// Still schedule cleanup in case some parts were uploaded
-		err = s.scheduleObjectsForDeletion(ctx, queries, s3Client, uploadDetails, uploadDetails.IndexObjectKey)
+		err = s.scheduleObjectsForDeletion(s3Ctx, queries, s3Client, uploadDetails, uploadDetails.IndexObjectKey)
 		if err != nil {
 			return fmt.Errorf("failed to schedule cleanup for multipart upload: %w", err)
 		}
 	}
 
 	// Delete the upload record from the database
-	err = queries.DeleteDatarangeUpload(ctx, req.DatarangeUploadID)
+	err = queries.DeleteDatarangeUpload(s3Ctx, req.DatarangeUploadID)
 	if err != nil {
 		return fmt.Errorf("failed to delete datarange upload record: %w", err)
 	}
 
 	// Delete the datarange record from the database since the upload was cancelled
-	err = queries.DeleteDatarange(ctx, uploadDetails.DatarangeID)
+	err = queries.DeleteDatarange(s3Ctx, uploadDetails.DatarangeID)
 	if err != nil {
 		return fmt.Errorf("failed to delete datarange record: %w", err)
 	}
@@ -111,7 +131,16 @@ func (s *UploadDatarangeServer) scheduleObjectsForDeletion(ctx context.Context, 
 		Valid: true,
 	}
 
-	err = queries.ScheduleKeyForDeletion(ctx, postgresstore.ScheduleKeyForDeletionParams{
+	// Use the original context (not the S3 timeout context) for database operations
+	originalCtx := context.Background()
+	if deadline, ok := ctx.Deadline(); ok {
+		// If the S3 context has a deadline, create a new context with a longer deadline for DB operations
+		dbCtx, cancel := context.WithDeadline(originalCtx, deadline.Add(10*time.Second))
+		defer cancel()
+		originalCtx = dbCtx
+	}
+
+	err = queries.ScheduleKeyForDeletion(originalCtx, postgresstore.ScheduleKeyForDeletionParams{
 		PresignedDeleteUrl: dataDeleteReq.URL,
 		DeleteAfter:        deleteAfter,
 	})
@@ -119,7 +148,7 @@ func (s *UploadDatarangeServer) scheduleObjectsForDeletion(ctx context.Context, 
 		return fmt.Errorf("failed to schedule data object deletion: %w", err)
 	}
 
-	err = queries.ScheduleKeyForDeletion(ctx, postgresstore.ScheduleKeyForDeletionParams{
+	err = queries.ScheduleKeyForDeletion(originalCtx, postgresstore.ScheduleKeyForDeletionParams{
 		PresignedDeleteUrl: indexDeleteReq.URL,
 		DeleteAfter:        deleteAfter,
 	})

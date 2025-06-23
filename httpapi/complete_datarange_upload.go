@@ -16,7 +16,7 @@ func (a *api) completeDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = a.s.CompleteDatarangeUpload(r.Context(), req)
+	err = a.s.CompleteDatarangeUpload(r.Context(), a.log, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

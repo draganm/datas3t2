@@ -3,6 +3,7 @@ package uploaddatarange
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 
@@ -67,7 +68,23 @@ func (r *UploadDatarangeRequest) Validate(ctx context.Context) error {
 
 var ErrDatarangeOverlap = fmt.Errorf("datarange overlaps with existing dataranges")
 
-func (s *UploadDatarangeServer) StartDatarangeUpload(ctx context.Context, req *UploadDatarangeRequest) (_ *UploadDatarangeResponse, err error) {
+func (s *UploadDatarangeServer) StartDatarangeUpload(ctx context.Context, log *slog.Logger, req *UploadDatarangeRequest) (_ *UploadDatarangeResponse, err error) {
+	log = log.With(
+		"datas3t_name", req.Datas3tName,
+		"data_size", req.DataSize,
+		"number_of_datapoints", req.NumberOfDatapoints,
+		"first_datapoint_index", req.FirstDatapointIndex,
+	)
+	log.Info("Starting datarange upload")
+
+	defer func() {
+		if err != nil {
+			log.Error("Failed to start datarange upload", "error", err)
+		} else {
+			log.Info("Datarange upload started successfully")
+		}
+	}()
+
 	err = req.Validate(ctx)
 	if err != nil {
 		return nil, err

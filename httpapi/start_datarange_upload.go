@@ -23,7 +23,7 @@ func (a *api) startDatarangeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.s.StartDatarangeUpload(r.Context(), req)
+	resp, err := a.s.StartDatarangeUpload(r.Context(), a.log, req)
 	switch {
 	case errors.Is(err, uploaddatarange.ErrDatarangeOverlap):
 		http.Error(w, err.Error(), http.StatusBadRequest)

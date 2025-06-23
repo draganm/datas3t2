@@ -2,6 +2,8 @@ package addbucket_test
 
 import (
 	"context"
+	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -35,12 +37,14 @@ var _ = Describe("AddBucket", func() {
 		minioAccessKey string
 		minioSecretKey string
 		testBucketName string
+		logger         *slog.Logger
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
 
 		var err error
+		logger = slog.New(slog.NewTextHandler(GinkgoWriter, nil))
 
 		// Start PostgreSQL container
 		pgContainer, err = tc_postgres.Run(ctx,
@@ -51,7 +55,9 @@ var _ = Describe("AddBucket", func() {
 			testcontainers.WithWaitStrategy(
 				wait.ForLog("database system is ready to accept connections").
 					WithOccurrence(2).
-					WithStartupTimeout(30*time.Second)),
+					WithStartupTimeout(30*time.Second),
+			),
+			testcontainers.WithLogger(log.New(GinkgoWriter, "", 0)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -83,6 +89,7 @@ var _ = Describe("AddBucket", func() {
 			"minio/minio:RELEASE.2024-01-16T16-07-38Z",
 			minio.WithUsername("minioadmin"),
 			minio.WithPassword("minioadmin"),
+			testcontainers.WithLogger(log.New(GinkgoWriter, "", 0)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -138,7 +145,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify bucket was added to database
@@ -160,7 +167,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false, // Keep false since our test MinIO doesn't have TLS
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify bucket was added to database
@@ -189,7 +196,7 @@ var _ = Describe("AddBucket", func() {
 					UseTLS:    false,
 				}
 
-				err := srv.AddBucket(ctx, bucketInfo)
+				err := srv.AddBucket(ctx, logger, bucketInfo)
 				Expect(err).NotTo(HaveOccurred(), "Failed for bucket name: %s", name)
 
 				// Verify bucket was added to database
@@ -237,7 +244,7 @@ var _ = Describe("AddBucket", func() {
 					UseTLS:    false,
 				}
 
-				err := srv.AddBucket(ctx, bucketInfo)
+				err := srv.AddBucket(ctx, logger, bucketInfo)
 				Expect(err).To(HaveOccurred(), "Should have failed for bucket name: %s", name)
 				Expect(err.Error()).To(ContainSubstring("invalid bucket name"), "Wrong error for bucket name: %s", name)
 			}
@@ -253,7 +260,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("endpoint is required"))
 		})
@@ -268,7 +275,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("bucket is required"))
 		})
@@ -283,7 +290,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to test connection"))
 		})
@@ -298,7 +305,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to test connection"))
 		})
@@ -313,7 +320,7 @@ var _ = Describe("AddBucket", func() {
 				UseTLS:    false,
 			}
 
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to test connection"))
 		})
@@ -331,11 +338,11 @@ var _ = Describe("AddBucket", func() {
 			}
 
 			// Add first bucket
-			err := srv.AddBucket(ctx, bucketInfo)
+			err := srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Try to add the same bucket name again
-			err = srv.AddBucket(ctx, bucketInfo)
+			err = srv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to add bucket"))
 		})
@@ -370,11 +377,11 @@ var _ = Describe("AddBucket", func() {
 			}
 
 			// Add first bucket
-			err = srv.AddBucket(ctx, bucketInfo1)
+			err = srv.AddBucket(ctx, logger, bucketInfo1)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Try to add the same endpoint-bucket combination with different name
-			err = srv.AddBucket(ctx, bucketInfo2)
+			err = srv.AddBucket(ctx, logger, bucketInfo2)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to add bucket"))
 		})

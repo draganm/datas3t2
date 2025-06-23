@@ -2,9 +2,10 @@ package uploaddatarange_test
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/draganm/datas3t2/postgresstore"
 	"github.com/draganm/datas3t2/server/addbucket"
 	"github.com/draganm/datas3t2/server/adddatas3t"
 	"github.com/draganm/datas3t2/server/uploaddatarange"
@@ -137,11 +139,10 @@ func createTarWithInvalidNames() ([]byte, []byte) {
 
 var _ = Describe("UploadDatarange", func() {
 	var (
-		ctx                  context.Context
-		cancel               context.CancelFunc
 		pgContainer          *tc_postgres.PostgresContainer
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
+		queries              *postgresstore.Queries
 		uploadSrv            *uploaddatarange.UploadDatarangeServer
 		bucketSrv            *addbucket.AddBucketServer
 		datasetSrv           *adddatas3t.AddDatas3tServer
@@ -153,10 +154,15 @@ var _ = Describe("UploadDatarange", func() {
 		testBucketConfigName string
 		testDatasetName      string
 		s3Client             *s3.Client
+		logger               *slog.Logger
 	)
 
-	BeforeEach(func() {
-		ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
+	BeforeEach(func(ctx SpecContext) {
+
+		// Create logger that writes to GinkgoWriter for test visibility
+		logger = slog.New(slog.NewTextHandler(GinkgoWriter, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		}))
 
 		var err error
 
@@ -169,7 +175,9 @@ var _ = Describe("UploadDatarange", func() {
 			testcontainers.WithWaitStrategy(
 				wait.ForLog("database system is ready to accept connections").
 					WithOccurrence(2).
-					WithStartupTimeout(30*time.Second)),
+					WithStartupTimeout(30*time.Second),
+			),
+			testcontainers.WithLogger(log.New(GinkgoWriter, "", 0)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -180,6 +188,9 @@ var _ = Describe("UploadDatarange", func() {
 		// Connect to PostgreSQL
 		db, err = pgxpool.New(ctx, connStr)
 		Expect(err).NotTo(HaveOccurred())
+
+		// Initialize queries instance
+		queries = postgresstore.New(db)
 
 		// Run migrations
 		connStrForMigration, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
@@ -196,10 +207,12 @@ var _ = Describe("UploadDatarange", func() {
 		}
 
 		// Start MinIO container
-		minioContainer, err = minio.Run(ctx,
+		minioContainer, err = minio.Run(
+			ctx,
 			"minio/minio:RELEASE.2024-01-16T16-07-38Z",
 			minio.WithUsername("minioadmin"),
 			minio.WithPassword("minioadmin"),
+			testcontainers.WithLogger(log.New(GinkgoWriter, "", 0)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -267,7 +280,7 @@ var _ = Describe("UploadDatarange", func() {
 			UseTLS:    false,
 		}
 
-		err = bucketSrv.AddBucket(ctx, bucketInfo)
+		err = bucketSrv.AddBucket(ctx, logger, bucketInfo)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Add test dataset
@@ -276,11 +289,11 @@ var _ = Describe("UploadDatarange", func() {
 			Name:   testDatasetName,
 		}
 
-		err = datasetSrv.AddDatas3t(ctx, datasetReq)
+		err = datasetSrv.AddDatas3t(ctx, logger, datasetReq)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	AfterEach(func() {
+	AfterEach(func(ctx SpecContext) {
 		if db != nil {
 			db.Close()
 		}
@@ -292,12 +305,11 @@ var _ = Describe("UploadDatarange", func() {
 			err := minioContainer.Terminate(ctx)
 			Expect(err).NotTo(HaveOccurred())
 		}
-		cancel()
 	})
 
 	Context("StartDatarangeUpload", func() {
 		Context("when starting a valid small upload (direct PUT)", func() {
-			It("should successfully create upload with direct PUT URLs", func() {
+			It("should successfully create upload with direct PUT URLs", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024, // Small size < 5MB
@@ -305,7 +317,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				resp, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				resp, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp).NotTo(BeNil())
 				Expect(resp.UseDirectPut).To(BeTrue())
@@ -316,45 +328,36 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(resp.FirstDatapointIndex).To(Equal(uint64(0)))
 
 				// Verify database state
-				dataranges, err := db.Query(ctx, "SELECT id, dataset_id, min_datapoint_key, max_datapoint_key, size_bytes FROM dataranges")
+				dataranges, err := queries.GetAllDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
 
 				var datarangeCount int
-				for dataranges.Next() {
+				for _, datarange := range dataranges {
 					datarangeCount++
-					var id, datasetID, minKey, maxKey, sizeBytes int64
-					err = dataranges.Scan(&id, &datasetID, &minKey, &maxKey, &sizeBytes)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(minKey).To(Equal(int64(0)))
-					Expect(maxKey).To(Equal(int64(9)))
-					Expect(sizeBytes).To(Equal(int64(1024)))
+					Expect(datarange.MinDatapointKey).To(Equal(int64(0)))
+					Expect(datarange.MaxDatapointKey).To(Equal(int64(9)))
+					Expect(datarange.SizeBytes).To(Equal(int64(1024)))
 				}
 				Expect(datarangeCount).To(Equal(1))
 
 				// Verify upload record
-				uploads, err := db.Query(ctx, "SELECT id, datarange_id, upload_id, first_datapoint_index, number_of_datapoints, data_size FROM datarange_uploads")
+				uploads, err := queries.GetAllDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
 
 				var uploadCount int
-				for uploads.Next() {
+				for _, upload := range uploads {
 					uploadCount++
-					var id, datarangeID, firstIndex, numDatapoints, dataSize int64
-					var uploadID string
-					err = uploads.Scan(&id, &datarangeID, &uploadID, &firstIndex, &numDatapoints, &dataSize)
-					Expect(err).NotTo(HaveOccurred())
-					Expect(uploadID).To(Equal("DIRECT_PUT"))
-					Expect(firstIndex).To(Equal(int64(0)))
-					Expect(numDatapoints).To(Equal(int64(10)))
-					Expect(dataSize).To(Equal(int64(1024)))
+					Expect(upload.UploadID).To(Equal("DIRECT_PUT"))
+					Expect(upload.FirstDatapointIndex).To(Equal(int64(0)))
+					Expect(upload.NumberOfDatapoints).To(Equal(int64(10)))
+					Expect(upload.DataSize).To(Equal(int64(1024)))
 				}
 				Expect(uploadCount).To(Equal(1))
 			})
 		})
 
 		Context("when starting a valid large upload (multipart)", func() {
-			It("should successfully create upload with multipart URLs", func() {
+			It("should successfully create upload with multipart URLs", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            10 * 1024 * 1024, // 10MB > 5MB threshold
@@ -362,7 +365,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 100,
 				}
 
-				resp, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				resp, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp).NotTo(BeNil())
 				Expect(resp.UseDirectPut).To(BeFalse())
@@ -374,34 +377,28 @@ var _ = Describe("UploadDatarange", func() {
 				Expect(resp.FirstDatapointIndex).To(Equal(uint64(100)))
 
 				// Verify database state
-				dataranges, err := db.Query(ctx, "SELECT min_datapoint_key, max_datapoint_key, size_bytes FROM dataranges")
+				dataranges, err := queries.GetDatarangeFields(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
 
-				Expect(dataranges.Next()).To(BeTrue())
-				var minKey, maxKey, sizeBytes int64
-				err = dataranges.Scan(&minKey, &maxKey, &sizeBytes)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(minKey).To(Equal(int64(100)))
-				Expect(maxKey).To(Equal(int64(1099))) // 100 + 1000 - 1
-				Expect(sizeBytes).To(Equal(int64(10 * 1024 * 1024)))
+				Expect(len(dataranges)).To(Equal(1))
+				datarange := dataranges[0]
+				Expect(datarange.MinDatapointKey).To(Equal(int64(100)))
+				Expect(datarange.MaxDatapointKey).To(Equal(int64(1099))) // 100 + 1000 - 1
+				Expect(datarange.SizeBytes).To(Equal(int64(10 * 1024 * 1024)))
 
 				// Verify upload record
-				uploads, err := db.Query(ctx, "SELECT upload_id FROM datarange_uploads")
+				uploadIDs, err := queries.GetDatarangeUploadIDs(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
 
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadID string
-				err = uploads.Scan(&uploadID)
-				Expect(err).NotTo(HaveOccurred())
+				Expect(len(uploadIDs)).To(Equal(1))
+				uploadID := uploadIDs[0]
 				Expect(uploadID).NotTo(Equal("DIRECT_PUT"))
 				Expect(uploadID).NotTo(BeEmpty())
 			})
 		})
 
 		Context("when validation fails", func() {
-			It("should reject empty dataset name", func() {
+			It("should reject empty dataset name", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         "",
 					DataSize:            1024,
@@ -409,22 +406,17 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("datas3t_name is required"))
 
 				// Verify no database changes
-				count, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer count.Close()
-				Expect(count.Next()).To(BeTrue())
-				var datarangeCount int
-				err = count.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(0))
+				Expect(datarangeCount).To(Equal(int64(0)))
 			})
 
-			It("should reject zero data size", func() {
+			It("should reject zero data size", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            0,
@@ -432,22 +424,17 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("data_size must be greater than 0"))
 
 				// Verify no database changes
-				count, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer count.Close()
-				Expect(count.Next()).To(BeTrue())
-				var datarangeCount int
-				err = count.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(0))
+				Expect(datarangeCount).To(Equal(int64(0)))
 			})
 
-			It("should reject zero number of datapoints", func() {
+			It("should reject zero number of datapoints", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
 					DataSize:            1024,
@@ -455,22 +442,17 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("number_of_datapoints must be greater than 0"))
 
 				// Verify no database changes
-				count, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer count.Close()
-				Expect(count.Next()).To(BeTrue())
-				var datarangeCount int
-				err = count.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(0))
+				Expect(datarangeCount).To(Equal(int64(0)))
 			})
 
-			It("should reject non-existent dataset", func() {
+			It("should reject non-existent dataset", func(ctx SpecContext) {
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         "non-existent-dataset",
 					DataSize:            1024,
@@ -478,24 +460,19 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to find dataset 'non-existent-dataset'"))
 
 				// Verify no database changes
-				count, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer count.Close()
-				Expect(count.Next()).To(BeTrue())
-				var datarangeCount int
-				err = count.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(0))
+				Expect(datarangeCount).To(Equal(int64(0)))
 			})
 		})
 
 		Context("when handling overlapping dataranges", func() {
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Create an existing datarange from 0-99
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -504,11 +481,11 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should reject overlapping ranges", func() {
+			It("should reject overlapping ranges", func(ctx SpecContext) {
 				// Try to create overlapping range 50-149
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -517,22 +494,17 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 50,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("datarange overlaps with existing dataranges"))
 
 				// Verify only one datarange exists
-				count, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer count.Close()
-				Expect(count.Next()).To(BeTrue())
-				var datarangeCount int
-				err = count.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(1))
+				Expect(datarangeCount).To(Equal(int64(1)))
 			})
 
-			It("should allow adjacent ranges", func() {
+			It("should allow adjacent ranges", func(ctx SpecContext) {
 				// Create adjacent range 100-199 (no overlap)
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -541,18 +513,13 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 100,
 				}
 
-				_, err := uploadSrv.StartDatarangeUpload(ctx, req)
+				_, err := uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify two dataranges exist
-				count, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer count.Close()
-				Expect(count.Next()).To(BeTrue())
-				var datarangeCount int
-				err = count.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(2))
+				Expect(datarangeCount).To(Equal(int64(2)))
 			})
 		})
 	})
@@ -562,7 +529,7 @@ var _ = Describe("UploadDatarange", func() {
 		var testData []byte
 		var testIndex []byte
 
-		BeforeEach(func() {
+		BeforeEach(func(ctx SpecContext) {
 			// Start an upload
 			req := &uploaddatarange.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
@@ -572,7 +539,7 @@ var _ = Describe("UploadDatarange", func() {
 			}
 
 			var err error
-			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Prepare test data
@@ -585,7 +552,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when completing a successful direct PUT upload", func() {
-			It("should complete successfully with both files uploaded", func() {
+			It("should complete successfully with both files uploaded", func(ctx SpecContext) {
 				// Upload data file
 				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(testData))
 				Expect(err).NotTo(HaveOccurred())
@@ -603,33 +570,23 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 
 				// Verify datarange record still exists
-				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
-				Expect(dataranges.Next()).To(BeTrue())
-				var datarangeCount int
-				err = dataranges.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(1))
+				Expect(datarangeCount).To(Equal(int64(1)))
 			})
 		})
 
 		Context("when index file is missing", func() {
-			It("should fail and schedule cleanup", func() {
+			It("should fail and schedule cleanup", func(ctx SpecContext) {
 				// Upload only data file (no index)
 				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(testData))
 				Expect(err).NotTo(HaveOccurred())
@@ -641,43 +598,28 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("index file not found"))
 
 				// Verify cleanup happened - both upload and datarange records should be deleted
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 
-				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
-				Expect(dataranges.Next()).To(BeTrue())
-				var datarangeCount int
-				err = dataranges.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(0))
+				Expect(datarangeCount).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+				Expect(cleanupTasks).To(Equal(int64(2))) // Both data and index objects scheduled for deletion
 			})
 		})
 
 		Context("when data file is missing", func() {
-			It("should fail and schedule cleanup", func() {
+			It("should fail and schedule cleanup", func(ctx SpecContext) {
 				// Upload only index file (no data)
 				indexResp, err := httpPut(uploadResp.PresignedIndexPutURL, bytes.NewReader(testIndex))
 				Expect(err).NotTo(HaveOccurred())
@@ -689,34 +631,24 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get uploaded object info"))
 
 				// Verify cleanup happened
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2))
+				Expect(cleanupTasks).To(Equal(int64(2)))
 			})
 		})
 
 		Context("when data size is wrong", func() {
-			It("should fail and schedule cleanup", func() {
+			It("should fail and schedule cleanup", func(ctx SpecContext) {
 				// Upload wrong size data
 				wrongSizeData := make([]byte, 512) // Expected 1024, uploading 512
 				for i := range wrongSizeData {
@@ -739,30 +671,20 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
 				Expect(err.Error()).To(ContainSubstring("expected 1024, got 512"))
 
 				// Verify cleanup happened
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2))
+				Expect(cleanupTasks).To(Equal(int64(2)))
 			})
 		})
 	})
@@ -772,7 +694,7 @@ var _ = Describe("UploadDatarange", func() {
 		var testData []byte
 		var testIndex []byte
 
-		BeforeEach(func() {
+		BeforeEach(func(ctx SpecContext) {
 			// Start a large upload that requires multipart
 			req := &uploaddatarange.UploadDatarangeRequest{
 				Datas3tName:         testDatasetName,
@@ -782,7 +704,7 @@ var _ = Describe("UploadDatarange", func() {
 			}
 
 			var err error
-			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(uploadResp.UseDirectPut).To(BeFalse())
 
@@ -796,7 +718,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when completing a successful multipart upload", func() {
-			It("should complete successfully with all parts uploaded", func() {
+			It("should complete successfully with all parts uploaded", func(ctx SpecContext) {
 				// Upload all parts
 				partSize := 5 * 1024 * 1024 // 5MB per part
 				var etags []string
@@ -832,28 +754,18 @@ var _ = Describe("UploadDatarange", func() {
 					UploadIDs:         etags,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 
 				// Verify datarange record still exists
-				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
-				Expect(dataranges.Next()).To(BeTrue())
-				var datarangeCount int
-				err = dataranges.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(1))
+				Expect(datarangeCount).To(Equal(int64(1)))
 
 				// Verify the file was actually uploaded and accessible
 				getResp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
@@ -870,7 +782,7 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		Context("when multipart upload fails due to missing parts", func() {
-			It("should fail to complete with incomplete parts", func() {
+			It("should fail to complete with incomplete parts", func(ctx SpecContext) {
 				// Upload only the first part (missing second part)
 				partSize := 5 * 1024 * 1024 // 5MB per part
 				partData := testData[:partSize]
@@ -895,30 +807,20 @@ var _ = Describe("UploadDatarange", func() {
 					UploadIDs:         []string{etag}, // Missing second part
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				// When only partial data is uploaded, it fails with size mismatch before multipart completion
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
 
 				// Verify records were cleaned up (both upload and datarange should be deleted on failure)
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0)) // Upload record should be deleted after failed completion
+				Expect(uploadCount).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+				Expect(cleanupTasks).To(Equal(int64(2)))
 			})
 		})
 	})
@@ -927,7 +829,7 @@ var _ = Describe("UploadDatarange", func() {
 		Context("when cancelling a direct PUT upload", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Start a small upload that uses direct PUT
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -937,75 +839,50 @@ var _ = Describe("UploadDatarange", func() {
 				}
 
 				var err error
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(uploadResp.UseDirectPut).To(BeTrue())
 			})
 
-			It("should successfully cancel upload and clean up database records", func() {
+			It("should successfully cancel upload and clean up database records", func(ctx SpecContext) {
 				// Verify initial state
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(1))
+				Expect(uploadCount).To(Equal(int64(1)))
 
-				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
-				Expect(dataranges.Next()).To(BeTrue())
-				var datarangeCount int
-				err = dataranges.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(1))
+				Expect(datarangeCount).To(Equal(int64(1)))
 
 				// Cancel the upload
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
-				uploads2, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount2, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads2.Close()
-				Expect(uploads2.Next()).To(BeTrue())
-				var uploadCount2 int
-				err = uploads2.Scan(&uploadCount2)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount2).To(Equal(0))
+				Expect(uploadCount2).To(Equal(int64(0)))
 
 				// Verify datarange record was also deleted
-				dataranges2, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount2, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges2.Close()
-				Expect(dataranges2.Next()).To(BeTrue())
-				var datarangeCount2 int
-				err = dataranges2.Scan(&datarangeCount2)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount2).To(Equal(0))
+				Expect(datarangeCount2).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+				Expect(cleanupTasks).To(Equal(int64(2)))
 			})
 		})
 
 		Context("when cancelling a multipart upload", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Start a large upload that requires multipart
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -1015,71 +892,46 @@ var _ = Describe("UploadDatarange", func() {
 				}
 
 				var err error
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(uploadResp.UseDirectPut).To(BeFalse())
 			})
 
-			It("should successfully cancel multipart upload and clean up database records", func() {
+			It("should successfully cancel multipart upload and clean up database records", func(ctx SpecContext) {
 				// Verify initial state
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(1))
+				Expect(uploadCount).To(Equal(int64(1)))
 
-				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
-				Expect(dataranges.Next()).To(BeTrue())
-				var datarangeCount int
-				err = dataranges.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(1))
+				Expect(datarangeCount).To(Equal(int64(1)))
 
 				// Cancel the upload
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload record was deleted
-				uploads2, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount2, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads2.Close()
-				Expect(uploads2.Next()).To(BeTrue())
-				var uploadCount2 int
-				err = uploads2.Scan(&uploadCount2)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount2).To(Equal(0))
+				Expect(uploadCount2).To(Equal(int64(0)))
 
 				// Verify datarange record was also deleted
-				dataranges2, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount2, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges2.Close()
-				Expect(dataranges2.Next()).To(BeTrue())
-				var datarangeCount2 int
-				err = dataranges2.Scan(&datarangeCount2)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount2).To(Equal(0))
+				Expect(datarangeCount2).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+				Expect(cleanupTasks).To(Equal(int64(2)))
 			})
 
-			It("should handle partial uploads by cancelling and cleaning up properly", func() {
+			It("should handle partial uploads by cancelling and cleaning up properly", func(ctx SpecContext) {
 				// Upload one part to simulate partial upload
 				testData := make([]byte, 5*1024*1024) // 5MB for first part
 				for i := range testData {
@@ -1096,47 +948,32 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify database cleanup
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 
-				dataranges, err := db.Query(ctx, "SELECT count(*) FROM dataranges")
+				datarangeCount, err := queries.CountDataranges(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer dataranges.Close()
-				Expect(dataranges.Next()).To(BeTrue())
-				var datarangeCount int
-				err = dataranges.Scan(&datarangeCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(datarangeCount).To(Equal(0))
+				Expect(datarangeCount).To(Equal(int64(0)))
 
 				// Verify cleanup tasks were scheduled
-				cleanupTasks, err := db.Query(ctx, "SELECT count(*) FROM keys_to_delete")
+				cleanupTasks, err := queries.CountKeysToDelete(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer cleanupTasks.Close()
-				Expect(cleanupTasks.Next()).To(BeTrue())
-				var cleanupCount int
-				err = cleanupTasks.Scan(&cleanupCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cleanupCount).To(Equal(2)) // Both data and index objects scheduled for deletion
+				Expect(cleanupTasks).To(Equal(int64(2)))
 			})
 		})
 
 		Context("when validation fails", func() {
-			It("should reject non-existent upload ID", func() {
+			It("should reject non-existent upload ID", func(ctx SpecContext) {
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: 999999, // Non-existent ID
 				}
 
-				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
 			})
@@ -1145,7 +982,7 @@ var _ = Describe("UploadDatarange", func() {
 		Context("when upload has already been cancelled", func() {
 			var uploadResp *uploaddatarange.UploadDatarangeResponse
 
-			BeforeEach(func() {
+			BeforeEach(func(ctx SpecContext) {
 				// Start an upload
 				req := &uploaddatarange.UploadDatarangeRequest{
 					Datas3tName:         testDatasetName,
@@ -1155,24 +992,24 @@ var _ = Describe("UploadDatarange", func() {
 				}
 
 				var err error
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Cancel it once
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
-				err = uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err = uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should return error when trying to cancel again", func() {
+			It("should return error when trying to cancel again", func(ctx SpecContext) {
 				// Try to cancel again
 				cancelReq := &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err := uploadSrv.CancelDatarangeUpload(ctx, cancelReq)
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, cancelReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to get datarange upload details"))
 			})
@@ -1184,7 +1021,7 @@ var _ = Describe("UploadDatarange", func() {
 		var properTarData []byte
 		var properTarIndex []byte
 
-		BeforeEach(func() {
+		BeforeEach(func(ctx SpecContext) {
 			// Create a proper TAR archive with correctly named files
 			properTarData, properTarIndex = createProperTarWithIndex(5, 0) // 5 files starting from index 0
 
@@ -1197,12 +1034,12 @@ var _ = Describe("UploadDatarange", func() {
 			}
 
 			var err error
-			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+			uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		Context("when tar validation succeeds", func() {
-			It("should validate proper tar files with correct index", func() {
+			It("should validate proper tar files with correct index", func(ctx SpecContext) {
 				// Upload proper tar data
 				dataResp, err := httpPut(uploadResp.PresignedDataPutURL, bytes.NewReader(properTarData))
 				Expect(err).NotTo(HaveOccurred())
@@ -1220,23 +1057,18 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Verify upload completed successfully
-				uploads, err := db.Query(ctx, "SELECT count(*) FROM datarange_uploads")
+				uploadCount, err := queries.CountDatarangeUploads(ctx)
 				Expect(err).NotTo(HaveOccurred())
-				defer uploads.Close()
-				Expect(uploads.Next()).To(BeTrue())
-				var uploadCount int
-				err = uploads.Scan(&uploadCount)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(uploadCount).To(Equal(0))
+				Expect(uploadCount).To(Equal(int64(0)))
 			})
 		})
 
 		Context("when tar validation fails due to size mismatch", func() {
-			It("should reject tar with incorrect size", func() {
+			It("should reject tar with incorrect size", func(ctx SpecContext) {
 				// Create tar data with wrong size (truncate it)
 				wrongSizeTarData := properTarData[:len(properTarData)-100]
 
@@ -1257,19 +1089,19 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("uploaded size mismatch"))
 			})
 		})
 
 		Context("when tar validation fails due to invalid file names", func() {
-			It("should reject tar with incorrectly named files", func() {
+			It("should reject tar with incorrectly named files", func(ctx SpecContext) {
 				// Create tar with wrong file names
 				invalidTarData, invalidTarIndex := createTarWithInvalidNames()
 
 				// Update the upload request with correct size for the invalid tar
-				err := uploadSrv.CancelDatarangeUpload(ctx, &uploaddatarange.CancelUploadRequest{
+				err := uploadSrv.CancelDatarangeUpload(ctx, logger, &uploaddatarange.CancelUploadRequest{
 					DatarangeUploadID: uploadResp.DatarangeID,
 				})
 				Expect(err).NotTo(HaveOccurred())
@@ -1282,7 +1114,7 @@ var _ = Describe("UploadDatarange", func() {
 					FirstDatapointIndex: 0,
 				}
 
-				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, req)
+				uploadResp, err = uploadSrv.StartDatarangeUpload(ctx, logger, req)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Upload invalid tar data
@@ -1302,7 +1134,7 @@ var _ = Describe("UploadDatarange", func() {
 					DatarangeUploadID: uploadResp.DatarangeID,
 				}
 
-				err = uploadSrv.CompleteDatarangeUpload(ctx, completeReq)
+				err = uploadSrv.CompleteDatarangeUpload(ctx, logger, completeReq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("tar index validation failed"))
 				Expect(err.Error()).To(ContainSubstring("invalid file name format"))

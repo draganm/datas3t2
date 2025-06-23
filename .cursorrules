@@ -1,0 +1,88 @@
+# Database Query Best Practices
+
+## Use Postgresstore Package for All Database Queries
+
+All database queries must use the `postgresstore` package instead of direct SQL calls.
+
+### Avoid
+
+Direct database queries using raw SQL:
+```go
+// ❌ Don't do this
+rows, err := db.Query(ctx, "SELECT id, name FROM users WHERE active = $1", true)
+defer rows.Close()
+for rows.Next() {
+    var id int64
+    var name string
+    err = rows.Scan(&id, &name)
+    // ...
+}
+
+// ❌ Don't do this  
+count, err := db.Query(ctx, "SELECT count(*) FROM users")
+defer count.Close()
+count.Next()
+var userCount int
+err = count.Scan(&userCount)
+
+// ❌ Don't do this
+_, err := db.Exec(ctx, "DELETE FROM users WHERE id = $1", userID)
+```
+
+### Prefer
+
+Using postgresstore package methods:
+```go
+// ✅ Do this instead
+queries := postgresstore.New(db)
+users, err := queries.GetActiveUsers(ctx, true)
+for _, user := range users {
+    // user.ID and user.Name are already properly typed
+}
+
+// ✅ Do this instead
+userCount, err := queries.CountUsers(ctx)
+// userCount is already the correct type (int64)
+
+// ✅ Do this instead
+err := queries.DeleteUser(ctx, userID)
+```
+
+### Adding New Queries
+
+When you need a database query that doesn't exist in the postgresstore package:
+
+1. **Add the query to `postgresstore/query.sql`**:
+   ```sql
+   -- name: GetActiveUsers :many
+   SELECT id, name, email FROM users WHERE active = $1;
+   
+   -- name: CountUsers :one  
+   SELECT count(*) FROM users;
+   
+   -- name: DeleteUser :exec
+   DELETE FROM users WHERE id = $1;
+   ```
+
+2. **Regenerate the Go code**:
+   ```bash
+   cd postgresstore && nix develop -c sqlc generate
+   ```
+
+3. **Use the generated methods in your code**:
+   ```go
+   queries := postgresstore.New(db)
+   users, err := queries.GetActiveUsers(ctx, true)
+   ```
+
+### Benefits
+
+- **Type Safety**: Generated methods are fully type-safe
+- **Maintainability**: All queries are centralized in one place
+- **Consistency**: Standardized error handling and patterns
+- **Performance**: Queries are pre-parsed and optimized
+- **IDE Support**: Full autocomplete and refactoring support
+
+### Exception
+
+The only exception is for one-off queries in migrations or administrative scripts where creating a formal query method would be overkill. Even then, consider if the query might be reused elsewhere. 

@@ -2,6 +2,8 @@ package adddatas3t_test
 
 import (
 	"context"
+	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -37,12 +39,15 @@ var _ = Describe("AddDatas3t", func() {
 		minioSecretKey       string
 		testBucketName       string
 		testBucketConfigName string
+		logger               *slog.Logger
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
 
 		var err error
+
+		logger = slog.New(slog.NewTextHandler(GinkgoWriter, nil))
 
 		// Start PostgreSQL container
 		pgContainer, err = tc_postgres.Run(ctx,
@@ -53,7 +58,9 @@ var _ = Describe("AddDatas3t", func() {
 			testcontainers.WithWaitStrategy(
 				wait.ForLog("database system is ready to accept connections").
 					WithOccurrence(2).
-					WithStartupTimeout(30*time.Second)),
+					WithStartupTimeout(30*time.Second),
+			),
+			testcontainers.WithLogger(log.New(GinkgoWriter, "", 0)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -84,6 +91,7 @@ var _ = Describe("AddDatas3t", func() {
 			"minio/minio:RELEASE.2024-01-16T16-07-38Z",
 			minio.WithUsername("minioadmin"),
 			minio.WithPassword("minioadmin"),
+			testcontainers.WithLogger(log.New(GinkgoWriter, "", 0)),
 		)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -124,7 +132,7 @@ var _ = Describe("AddDatas3t", func() {
 			UseTLS:    false,
 		}
 
-		err = bucketSrv.AddBucket(ctx, bucketInfo)
+		err = bucketSrv.AddBucket(ctx, logger, bucketInfo)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -150,7 +158,7 @@ var _ = Describe("AddDatas3t", func() {
 				Name:   "test-dataset",
 			}
 
-			err := srv.AddDatas3t(ctx, datasetReq)
+			err := srv.AddDatas3t(ctx, logger, datasetReq)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify dataset was added to database
@@ -175,7 +183,7 @@ var _ = Describe("AddDatas3t", func() {
 					Name:   name,
 				}
 
-				err := srv.AddDatas3t(ctx, datasetReq)
+				err := srv.AddDatas3t(ctx, logger, datasetReq)
 				Expect(err).NotTo(HaveOccurred(), "Failed for dataset name: %s", name)
 
 				// Verify dataset was added to database
@@ -200,10 +208,10 @@ var _ = Describe("AddDatas3t", func() {
 				Name:   "test-dataset-2",
 			}
 
-			err := srv.AddDatas3t(ctx, datasetReq1)
+			err := srv.AddDatas3t(ctx, logger, datasetReq1)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = srv.AddDatas3t(ctx, datasetReq2)
+			err = srv.AddDatas3t(ctx, logger, datasetReq2)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify both datasets were added to database
@@ -233,7 +241,7 @@ var _ = Describe("AddDatas3t", func() {
 					Name:   name,
 				}
 
-				err := srv.AddDatas3t(ctx, datasetReq)
+				err := srv.AddDatas3t(ctx, logger, datasetReq)
 				Expect(err).To(HaveOccurred(), "Should have failed for dataset name: %s", name)
 				Expect(err.Error()).To(ContainSubstring("name must be a valid datas3t name"), "Wrong error for dataset name: %s", name)
 			}
@@ -245,7 +253,7 @@ var _ = Describe("AddDatas3t", func() {
 				Name:   "",
 			}
 
-			err := srv.AddDatas3t(ctx, datasetReq)
+			err := srv.AddDatas3t(ctx, logger, datasetReq)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("name is required"))
 		})
@@ -256,7 +264,7 @@ var _ = Describe("AddDatas3t", func() {
 				Name:   "test-dataset",
 			}
 
-			err := srv.AddDatas3t(ctx, datasetReq)
+			err := srv.AddDatas3t(ctx, logger, datasetReq)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("bucket is required"))
 		})
@@ -267,7 +275,7 @@ var _ = Describe("AddDatas3t", func() {
 				Name:   "test-dataset",
 			}
 
-			err := srv.AddDatas3t(ctx, datasetReq)
+			err := srv.AddDatas3t(ctx, logger, datasetReq)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("bucket 'non-existent-bucket' does not exist"))
 		})
@@ -281,11 +289,11 @@ var _ = Describe("AddDatas3t", func() {
 			}
 
 			// Add first dataset
-			err := srv.AddDatas3t(ctx, datasetReq)
+			err := srv.AddDatas3t(ctx, logger, datasetReq)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Try to add the same dataset name again
-			err = srv.AddDatas3t(ctx, datasetReq)
+			err = srv.AddDatas3t(ctx, logger, datasetReq)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to add datas3t"))
 		})
@@ -314,7 +322,7 @@ var _ = Describe("AddDatas3t", func() {
 				UseTLS:    false,
 			}
 
-			err = bucketSrv.AddBucket(ctx, bucketInfo)
+			err = bucketSrv.AddBucket(ctx, logger, bucketInfo)
 			Expect(err).NotTo(HaveOccurred())
 
 			datasetReq1 := &adddatas3t.AddDatas3tRequest{
@@ -328,11 +336,11 @@ var _ = Describe("AddDatas3t", func() {
 			}
 
 			// Add first dataset
-			err = srv.AddDatas3t(ctx, datasetReq1)
+			err = srv.AddDatas3t(ctx, logger, datasetReq1)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Try to add the same dataset name with different bucket
-			err = srv.AddDatas3t(ctx, datasetReq2)
+			err = srv.AddDatas3t(ctx, logger, datasetReq2)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to add datas3t"))
 		})

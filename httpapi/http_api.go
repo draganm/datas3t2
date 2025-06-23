@@ -1,18 +1,20 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/draganm/datas3t2/server"
 )
 
 type api struct {
-	s *server.Server
+	s   *server.Server
+	log *slog.Logger
 }
 
-func NewHTTPAPI(s *server.Server) *http.ServeMux {
+func NewHTTPAPI(s *server.Server, log *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
-	a := &api{s: s}
+	a := &api{s: s, log: log}
 
 	mux.HandleFunc("POST /api/v1/buckets", a.addBucket)
 	mux.HandleFunc("POST /api/v1/datas3ts", a.addDatas3t)
