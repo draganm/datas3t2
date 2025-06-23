@@ -145,7 +145,7 @@ var _ = Describe("UploadDatarange", func() {
 		queries              *postgresstore.Queries
 		uploadSrv            *dataranges.UploadDatarangeServer
 		bucketSrv            *bucket.BucketServer
-		datasetSrv           *datas3t.AddDatas3tServer
+		datasetSrv           *datas3t.Datas3tServer
 		minioEndpoint        string
 		minioHost            string
 		minioAccessKey       string

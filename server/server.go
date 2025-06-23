@@ -9,14 +9,14 @@ import (
 
 type Server struct {
 	*bucket.BucketServer
-	*datas3t.AddDatas3tServer
+	*datas3t.Datas3tServer
 	*dataranges.UploadDatarangeServer
 }
 
 func NewServer(db *pgxpool.Pool) *Server {
 	return &Server{
 		BucketServer:          bucket.NewServer(db),
-		AddDatas3tServer:      datas3t.NewServer(db),
+		Datas3tServer:         datas3t.NewServer(db),
 		UploadDatarangeServer: dataranges.NewServer(db),
 	}
 }

@@ -28,7 +28,7 @@ var _ = Describe("AddDatas3t", func() {
 		pgContainer          *tc_postgres.PostgresContainer
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
-		srv                  *datas3t.AddDatas3tServer
+		srv                  *datas3t.Datas3tServer
 		bucketSrv            *bucket.BucketServer
 		minioEndpoint        string
 		minioHost            string
