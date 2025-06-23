@@ -549,6 +549,44 @@ func (q *Queries) GetDatasetWithBucket(ctx context.Context, name string) (GetDat
 	return i, err
 }
 
+const listAllBuckets = `-- name: ListAllBuckets :many
+SELECT name, endpoint, bucket, use_tls
+FROM s3_buckets
+ORDER BY name
+`
+
+type ListAllBucketsRow struct {
+	Name     string
+	Endpoint string
+	Bucket   string
+	UseTls   bool
+}
+
+func (q *Queries) ListAllBuckets(ctx context.Context) ([]ListAllBucketsRow, error) {
+	rows, err := q.db.Query(ctx, listAllBuckets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllBucketsRow
+	for rows.Next() {
+		var i ListAllBucketsRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Endpoint,
+			&i.Bucket,
+			&i.UseTls,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const scheduleKeyForDeletion = `-- name: ScheduleKeyForDeletion :exec
 INSERT INTO keys_to_delete (presigned_delete_url, delete_after)
 VALUES ($1, $2)

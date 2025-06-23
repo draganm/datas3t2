@@ -20,6 +20,14 @@ type BucketInfo struct {
 	UseTLS    bool   `json:"use_tls"`
 }
 
+// BucketListInfo represents bucket information for listing (without sensitive credentials)
+type BucketListInfo struct {
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
+	Bucket   string `json:"bucket"`
+	UseTLS   bool   `json:"use_tls"`
+}
+
 var bucketNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type ValidationError error
