@@ -106,3 +106,31 @@ JOIN datasets d ON dr.dataset_id = d.id
 WHERE d.name = @datas3t_name
   AND dr.data_object_key = @data_object_key
 RETURNING id;
+
+-- name: GetAllDataranges :many
+SELECT id, dataset_id, min_datapoint_key, max_datapoint_key, size_bytes
+FROM dataranges;
+
+-- name: GetAllDatarangeUploads :many
+SELECT id, datarange_id, upload_id, first_datapoint_index, number_of_datapoints, data_size
+FROM datarange_uploads;
+
+-- name: GetDatarangeFields :many
+SELECT min_datapoint_key, max_datapoint_key, size_bytes
+FROM dataranges;
+
+-- name: GetDatarangeUploadIDs :many
+SELECT upload_id
+FROM datarange_uploads;
+
+-- name: CountDataranges :one
+SELECT count(*)
+FROM dataranges;
+
+-- name: CountDatarangeUploads :one
+SELECT count(*)
+FROM datarange_uploads;
+
+-- name: CountKeysToDelete :one
+SELECT count(*)
+FROM keys_to_delete;

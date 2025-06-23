@@ -176,6 +176,42 @@ func (q *Queries) CheckDatarangeOverlap(ctx context.Context, arg CheckDatarangeO
 	return column_1, err
 }
 
+const countDatarangeUploads = `-- name: CountDatarangeUploads :one
+SELECT count(*)
+FROM datarange_uploads
+`
+
+func (q *Queries) CountDatarangeUploads(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countDatarangeUploads)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countDataranges = `-- name: CountDataranges :one
+SELECT count(*)
+FROM dataranges
+`
+
+func (q *Queries) CountDataranges(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countDataranges)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countKeysToDelete = `-- name: CountKeysToDelete :one
+SELECT count(*)
+FROM keys_to_delete
+`
+
+func (q *Queries) CountKeysToDelete(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countKeysToDelete)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createDatarange = `-- name: CreateDatarange :one
 INSERT INTO dataranges (dataset_id, data_object_key, index_object_key, min_datapoint_key, max_datapoint_key, size_bytes)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -272,6 +308,142 @@ DELETE FROM datarange_uploads WHERE id = $1
 func (q *Queries) DeleteDatarangeUpload(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, deleteDatarangeUpload, id)
 	return err
+}
+
+const getAllDatarangeUploads = `-- name: GetAllDatarangeUploads :many
+SELECT id, datarange_id, upload_id, first_datapoint_index, number_of_datapoints, data_size
+FROM datarange_uploads
+`
+
+type GetAllDatarangeUploadsRow struct {
+	ID                  int64
+	DatarangeID         int64
+	UploadID            string
+	FirstDatapointIndex int64
+	NumberOfDatapoints  int64
+	DataSize            int64
+}
+
+func (q *Queries) GetAllDatarangeUploads(ctx context.Context) ([]GetAllDatarangeUploadsRow, error) {
+	rows, err := q.db.Query(ctx, getAllDatarangeUploads)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllDatarangeUploadsRow
+	for rows.Next() {
+		var i GetAllDatarangeUploadsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DatarangeID,
+			&i.UploadID,
+			&i.FirstDatapointIndex,
+			&i.NumberOfDatapoints,
+			&i.DataSize,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllDataranges = `-- name: GetAllDataranges :many
+SELECT id, dataset_id, min_datapoint_key, max_datapoint_key, size_bytes
+FROM dataranges
+`
+
+type GetAllDatarangesRow struct {
+	ID              int64
+	DatasetID       int64
+	MinDatapointKey int64
+	MaxDatapointKey int64
+	SizeBytes       int64
+}
+
+func (q *Queries) GetAllDataranges(ctx context.Context) ([]GetAllDatarangesRow, error) {
+	rows, err := q.db.Query(ctx, getAllDataranges)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetAllDatarangesRow
+	for rows.Next() {
+		var i GetAllDatarangesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DatasetID,
+			&i.MinDatapointKey,
+			&i.MaxDatapointKey,
+			&i.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDatarangeFields = `-- name: GetDatarangeFields :many
+SELECT min_datapoint_key, max_datapoint_key, size_bytes
+FROM dataranges
+`
+
+type GetDatarangeFieldsRow struct {
+	MinDatapointKey int64
+	MaxDatapointKey int64
+	SizeBytes       int64
+}
+
+func (q *Queries) GetDatarangeFields(ctx context.Context) ([]GetDatarangeFieldsRow, error) {
+	rows, err := q.db.Query(ctx, getDatarangeFields)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDatarangeFieldsRow
+	for rows.Next() {
+		var i GetDatarangeFieldsRow
+		if err := rows.Scan(&i.MinDatapointKey, &i.MaxDatapointKey, &i.SizeBytes); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDatarangeUploadIDs = `-- name: GetDatarangeUploadIDs :many
+SELECT upload_id
+FROM datarange_uploads
+`
+
+func (q *Queries) GetDatarangeUploadIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, getDatarangeUploadIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var upload_id string
+		if err := rows.Scan(&upload_id); err != nil {
+			return nil, err
+		}
+		items = append(items, upload_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getDatarangeUploadWithDetails = `-- name: GetDatarangeUploadWithDetails :one
