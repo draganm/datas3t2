@@ -1,4 +1,4 @@
-package addbucket
+package bucket
 
 import (
 	"context"

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/draganm/datas3t2/postgresstore"
-	"github.com/draganm/datas3t2/server/addbucket"
 	"github.com/draganm/datas3t2/server/adddatas3t"
+	"github.com/draganm/datas3t2/server/bucket"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -32,7 +32,7 @@ var _ = Describe("AddDatas3t", func() {
 		minioContainer       *minio.MinioContainer
 		db                   *pgxpool.Pool
 		srv                  *adddatas3t.AddDatas3tServer
-		bucketSrv            *addbucket.AddBucketServer
+		bucketSrv            *bucket.BucketServer
 		minioEndpoint        string
 		minioHost            string
 		minioAccessKey       string
@@ -120,10 +120,10 @@ var _ = Describe("AddDatas3t", func() {
 
 		// Create server instances
 		srv = adddatas3t.NewServer(db)
-		bucketSrv = addbucket.NewServer(db)
+		bucketSrv = bucket.NewServer(db)
 
 		// Add a test bucket configuration that datasets can use
-		bucketInfo := &addbucket.BucketInfo{
+		bucketInfo := &bucket.BucketInfo{
 			Name:      testBucketConfigName,
 			Endpoint:  minioEndpoint,
 			Bucket:    testBucketName,
@@ -313,7 +313,7 @@ var _ = Describe("AddDatas3t", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Add another bucket configuration
-			bucketInfo := &addbucket.BucketInfo{
+			bucketInfo := &bucket.BucketInfo{
 				Name:      anotherBucketConfigName,
 				Endpoint:  minioEndpoint,
 				Bucket:    anotherBucketName,

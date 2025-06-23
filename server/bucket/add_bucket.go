@@ -1,4 +1,4 @@
-package addbucket
+package bucket
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/draganm/datas3t2/postgresstore"
 )
 
-func (s *AddBucketServer) AddBucket(ctx context.Context, log *slog.Logger, req *BucketInfo) (err error) {
+func (s *BucketServer) AddBucket(ctx context.Context, log *slog.Logger, req *BucketInfo) (err error) {
 
 	log = log.With("bucket_name", req.Name)
 	log.Info("Adding bucket")

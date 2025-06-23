@@ -1,4 +1,4 @@
-package addbucket_test
+package bucket_test
 
 import (
 	"testing"
