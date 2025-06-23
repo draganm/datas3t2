@@ -15,6 +15,11 @@ WHERE name = $1;
 SELECT DISTINCT name
 FROM s3_buckets;
 
+-- name: ListAllBuckets :many
+SELECT name, endpoint, bucket, use_tls
+FROM s3_buckets
+ORDER BY name;
+
 -- name: GetDatasetWithBucket :one
 SELECT d.id, d.name, d.s3_bucket_id, 
        s.endpoint, s.bucket, s.access_key, s.secret_key, s.use_tls

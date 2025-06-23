@@ -86,3 +86,63 @@ When you need a database query that doesn't exist in the postgresstore package:
 ### Exception
 
 The only exception is for one-off queries in migrations or administrative scripts where creating a formal query method would be overkill. Even then, consider if the query might be reused elsewhere. 
+
+# Ginkgo SpecContext Best Practices
+
+In Ginkgo v2 tests, always use the SpecContext parameter for automatic context management instead of manual context creation and cancellation.
+
+## Avoid
+
+- Manual context management in test suites:
+  ```go
+  var _ = Describe("Test", func() {
+      var (
+          ctx    context.Context
+          cancel context.CancelFunc
+      )
+      
+      BeforeEach(func() {
+          ctx, cancel = context.WithTimeout(context.Background(), 300*time.Second)
+      })
+      
+      AfterEach(func() {
+          cancel()
+      })
+      
+      It("should do something", func() {
+          // test using ctx
+      })
+  })
+  ```
+
+## Prefer
+
+- Using SpecContext parameter for automatic management:
+  ```go
+  var _ = Describe("Test", func() {
+      BeforeEach(func(ctx SpecContext) {
+          // setup using ctx
+      })
+      
+      AfterEach(func(ctx SpecContext) {
+          // cleanup using ctx
+      })
+      
+      It("should do something", func(ctx SpecContext) {
+          // test using ctx
+      })
+  })
+  ```
+
+## Benefits
+
+- **Automatic Context Management**: Ginkgo handles context creation and cancellation
+- **Consistent Timeout Handling**: Uses Ginkgo's built-in timeout mechanisms
+- **Better Test Isolation**: Each test gets its own properly managed context
+- **Cleaner Code**: No manual context lifecycle management needed
+- **Resource Safety**: Prevents context leaks and improper cleanup
+
+## References
+
+- [Ginkgo v2 Documentation](https://onsi.github.io/ginkgo/)
+- [Ginkgo SpecContext Guide](https://onsi.github.io/ginkgo/#spec-context) 
