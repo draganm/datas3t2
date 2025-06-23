@@ -16,6 +16,7 @@ func NewHTTPAPI(s *server.Server, log *slog.Logger) *http.ServeMux {
 	mux := http.NewServeMux()
 	a := &api{s: s, log: log}
 
+	mux.HandleFunc("GET /api/v1/buckets", a.listBuckets)
 	mux.HandleFunc("POST /api/v1/buckets", a.addBucket)
 	mux.HandleFunc("POST /api/v1/datas3ts", a.addDatas3t)
 	mux.HandleFunc("POST /api/v1/upload-datarange", a.startDatarangeUpload)
