@@ -310,21 +310,42 @@ export CACHE_DIR="/path/to/cache"
 
 ### S3 Credential Encryption
 
-**Important: S3 credentials are encrypted at rest using AES-256-GCM.**
+**Important: S3 credentials are encrypted at rest using AES-256-GCM with unique random nonces.**
 
-Before starting the server, generate an encryption key:
+The encryption system provides the following security features:
+- **AES-256-GCM encryption**: Industry-standard authenticated encryption
+- **Unique nonces**: Each encryption uses a random nonce, so identical credentials produce different encrypted values
+- **Key derivation**: Input keys are SHA-256 hashed to ensure proper 32-byte key size
+- **Authenticated encryption**: Protects against tampering and ensures data integrity
+- **Transparent operation**: All S3 operations automatically encrypt/decrypt credentials
+
+#### Key Generation
+
+Generate a cryptographically secure 256-bit encryption key:
 
 ```bash
 nix develop -c go run ./cmd/keygen
 ```
 
-This will output a base64-encoded encryption key. Store this key securely and set it as an environment variable:
+This generates a 32-byte (256-bit) random key encoded as base64. Store this key securely and set it as an environment variable:
 
 ```bash
 export ENCRYPTION_KEY="your-generated-key-here"
 ```
 
-**Warning: Keep this key secure and backed up! If you lose it, you won't be able to decrypt your stored S3 credentials.**
+#### Alternative Key Generation
+
+You can also use `datas3t2-keygen` if you have built the binary:
+
+```bash
+./datas3t2-keygen
+```
+
+**Critical Security Notes:**
+- Keep this key secure and backed up! If you lose it, you won't be able to decrypt your stored S3 credentials
+- The same key must be used consistently across server restarts
+- Changing the key will make existing encrypted credentials unreadable
+- Store the key separately from your database backups for additional security
 
 ### Starting the Server
 
