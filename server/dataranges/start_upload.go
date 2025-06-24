@@ -287,6 +287,12 @@ func (s *UploadDatarangeServer) calculateNumberOfParts(dataSize, partSize uint64
 }
 
 func (s *UploadDatarangeServer) createS3Client(ctx context.Context, dataset postgresstore.GetDatasetWithBucketRow) (*s3.Client, error) {
+	// Decrypt credentials
+	accessKey, secretKey, err := s.encryptor.DecryptCredentials(dataset.AccessKey, dataset.SecretKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+	}
+
 	// Build endpoint URL with proper scheme based on UseTls
 	endpoint := dataset.Endpoint
 	if dataset.UseTls {
@@ -302,8 +308,8 @@ func (s *UploadDatarangeServer) createS3Client(ctx context.Context, dataset post
 	// Create AWS config with custom credentials
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			dataset.AccessKey,
-			dataset.SecretKey,
+			accessKey,
+			secretKey,
 			"", // token
 		)),
 		config.WithRegion("us-east-1"), // default region

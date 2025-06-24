@@ -26,14 +26,23 @@ func (s *BucketServer) AddBucket(ctx context.Context, log *slog.Logger, req *Buc
 		return fmt.Errorf("failed to validate bucket info: %w", err)
 	}
 
+	// Encrypt credentials before storing
+	encryptedAccessKey, encryptedSecretKey, err := s.encryptor.EncryptCredentials(
+		req.AccessKey,
+		req.SecretKey,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt credentials: %w", err)
+	}
+
 	queries := postgresstore.New(s.db)
 
 	err = queries.AddBucket(ctx, postgresstore.AddBucketParams{
 		Name:      req.Name,
 		Endpoint:  req.Endpoint,
 		Bucket:    req.Bucket,
-		AccessKey: req.AccessKey,
-		SecretKey: req.SecretKey,
+		AccessKey: encryptedAccessKey,
+		SecretKey: encryptedSecretKey,
 		UseTls:    req.UseTLS,
 	})
 

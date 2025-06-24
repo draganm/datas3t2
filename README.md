@@ -287,4 +287,79 @@ This project is licensed under the AGPLV3 License - see the [LICENSE](LICENSE) f
 For questions, issues, or contributions:
 - Open an issue on GitHub
 - Check existing documentation
-- Review test files for usage examples 
+- Review test files for usage examples
+
+## Installation
+
+```bash
+git clone https://github.com/draganm/datas3t2.git
+cd datas3t2
+nix develop -c make build
+```
+
+## Configuration
+
+### Database Setup
+
+Create a PostgreSQL database and set the connection string:
+
+```bash
+export DB_URL="postgres://user:password@localhost:5432/datas3t2"
+export CACHE_DIR="/path/to/cache"
+```
+
+### S3 Credential Encryption
+
+**Important: S3 credentials are encrypted at rest using AES-256-GCM with unique random nonces.**
+
+The encryption system provides the following security features:
+- **AES-256-GCM encryption**: Industry-standard authenticated encryption
+- **Unique nonces**: Each encryption uses a random nonce, so identical credentials produce different encrypted values
+- **Key derivation**: Input keys are SHA-256 hashed to ensure proper 32-byte key size
+- **Authenticated encryption**: Protects against tampering and ensures data integrity
+- **Transparent operation**: All S3 operations automatically encrypt/decrypt credentials
+
+#### Key Generation
+
+Generate a cryptographically secure 256-bit encryption key:
+
+```bash
+nix develop -c go run ./cmd/keygen
+```
+
+This generates a 32-byte (256-bit) random key encoded as base64. Store this key securely and set it as an environment variable:
+
+```bash
+export ENCRYPTION_KEY="your-generated-key-here"
+```
+
+#### Alternative Key Generation
+
+You can also use `datas3t2-keygen` if you have built the binary:
+
+```bash
+./datas3t2-keygen
+```
+
+**Critical Security Notes:**
+- Keep this key secure and backed up! If you lose it, you won't be able to decrypt your stored S3 credentials
+- The same key must be used consistently across server restarts
+- Changing the key will make existing encrypted credentials unreadable
+- Store the key separately from your database backups for additional security
+
+### Starting the Server
+
+```bash
+./datas3t2-server --db-url "$DB_URL" --cache-dir "$CACHE_DIR" --encryption-key "$ENCRYPTION_KEY"
+```
+
+Or using environment variables:
+
+```bash
+export DB_URL="postgres://user:password@localhost:5432/datas3t2"
+export CACHE_DIR="/path/to/cache"  
+export ENCRYPTION_KEY="your-encryption-key"
+./datas3t2-server
+```
+
+## Usage 

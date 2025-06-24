@@ -108,8 +108,9 @@ var _ = Describe("ListBuckets", func() {
 		err = minioClient.MakeBucket(ctx, testBucketName, miniogo.MakeBucketOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
-		// Create server instance
-		srv = bucket.NewServer(db)
+		// Create server instances
+		srv, err = bucket.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func(ctx SpecContext) {
