@@ -1,0 +1,52 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+
+	"github.com/draganm/datas3t2/server/download"
+)
+
+func (c *Client) PreSignDownloadForDatapoints(ctx context.Context, r *download.PreSignDownloadForDatapointsRequest) (*download.PreSignDownloadForDatapointsResponse, error) {
+	ur, err := url.JoinPath(c.baseURL, "api", "v1", "download")
+	if err != nil {
+		return nil, fmt.Errorf("failed to join path: %w", err)
+	}
+
+	body, err := json.Marshal(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", ur, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to presign download for datapoints: %w", err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to presign download for datapoints: %s: %s", resp.Status, string(body))
+	}
+
+	var respBody download.PreSignDownloadForDatapointsResponse
+	err = json.NewDecoder(resp.Body).Decode(&respBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &respBody, nil
+}

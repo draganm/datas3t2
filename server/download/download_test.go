@@ -202,7 +202,12 @@ var _ = Describe("PresignDownloadForDatapoints", func() {
 		uploadSrv = dataranges.NewServer(db)
 		bucketSrv = bucket.NewServer(db)
 		datasetSrv = datas3t.NewServer(db)
-		downloadSrv, err = download.NewDownloadServer(db)
+
+		// Create temporary cache directory for testing
+		cacheDir := GinkgoT().TempDir()
+		maxCacheSize := int64(100 * 1024 * 1024) // 100MB cache for tests
+
+		downloadSrv, err = download.NewDownloadServer(db, cacheDir, maxCacheSize)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Add test bucket configuration

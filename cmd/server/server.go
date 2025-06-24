@@ -27,8 +27,10 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	cfg := struct {
-		addr  string
-		dbURL string
+		addr         string
+		dbURL        string
+		cacheDir     string
+		maxCacheSize int64
 	}{}
 
 	app := &cli.App{
@@ -49,6 +51,20 @@ func main() {
 				EnvVars:     []string{"DB_URL"},
 				Destination: &cfg.dbURL,
 				Required:    true,
+			},
+			&cli.StringFlag{
+				Name:        "cache-dir",
+				Usage:       "Cache directory",
+				Required:    true,
+				EnvVars:     []string{"CACHE_DIR"},
+				Destination: &cfg.cacheDir,
+			},
+			&cli.Int64Flag{
+				Name:        "max-cache-size",
+				Value:       1024 * 1024 * 1024,
+				Usage:       "Maximum cache size in bytes",
+				EnvVars:     []string{"MAX_CACHE_SIZE"},
+				Destination: &cfg.maxCacheSize,
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -95,7 +111,10 @@ func main() {
 			defer l.Close()
 			logger.Info("server started", "addr", l.Addr())
 
-			s := server.NewServer(db)
+			s, err := server.NewServer(db, cfg.cacheDir, cfg.maxCacheSize)
+			if err != nil {
+				return fmt.Errorf("failed to create server: %w", err)
+			}
 
 			mux := httpapi.NewHTTPAPI(s, logger)
 
