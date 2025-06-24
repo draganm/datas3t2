@@ -1,9 +1,6 @@
 package download
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/draganm/datas3t2/tarindex/diskcache"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -13,13 +10,7 @@ type DownloadServer struct {
 	diskCache *diskcache.IndexDiskCache
 }
 
-func NewDownloadServer(pgxPool *pgxpool.Pool) (*DownloadServer, error) {
-	// Create a temporary directory for the disk cache
-	// In production, this should be configurable
-	cacheDir := filepath.Join(os.TempDir(), "datas3t2-cache")
-
-	// 1GB cache size (configurable in production)
-	maxCacheSize := int64(1024 * 1024 * 1024)
+func NewDownloadServer(pgxPool *pgxpool.Pool, cacheDir string, maxCacheSize int64) (*DownloadServer, error) {
 
 	diskCache, err := diskcache.NewIndexDiskCache(cacheDir, maxCacheSize)
 	if err != nil {
