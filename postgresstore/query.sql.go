@@ -514,6 +514,83 @@ func (q *Queries) GetDatarangeUploadWithDetails(ctx context.Context, id int64) (
 	return i, err
 }
 
+const getDatarangesForDatapoints = `-- name: GetDatarangesForDatapoints :many
+SELECT 
+    dr.id,
+    dr.data_object_key,
+    dr.index_object_key,
+    dr.min_datapoint_key,
+    dr.max_datapoint_key,
+    dr.size_bytes,
+    d.name as dataset_name,
+    s.endpoint,
+    s.bucket,
+    s.access_key,
+    s.secret_key,
+    s.use_tls
+FROM dataranges dr
+JOIN datasets d ON dr.dataset_id = d.id
+JOIN s3_buckets s ON d.s3_bucket_id = s.id
+WHERE d.name = $1
+  AND dr.min_datapoint_key <= $2  -- datarange starts before or at our last datapoint
+  AND dr.max_datapoint_key >= $3  -- datarange ends after or at our first datapoint
+ORDER BY dr.min_datapoint_key
+`
+
+type GetDatarangesForDatapointsParams struct {
+	Name            string
+	MinDatapointKey int64
+	MaxDatapointKey int64
+}
+
+type GetDatarangesForDatapointsRow struct {
+	ID              int64
+	DataObjectKey   string
+	IndexObjectKey  string
+	MinDatapointKey int64
+	MaxDatapointKey int64
+	SizeBytes       int64
+	DatasetName     string
+	Endpoint        string
+	Bucket          string
+	AccessKey       string
+	SecretKey       string
+	UseTls          bool
+}
+
+func (q *Queries) GetDatarangesForDatapoints(ctx context.Context, arg GetDatarangesForDatapointsParams) ([]GetDatarangesForDatapointsRow, error) {
+	rows, err := q.db.Query(ctx, getDatarangesForDatapoints, arg.Name, arg.MinDatapointKey, arg.MaxDatapointKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDatarangesForDatapointsRow
+	for rows.Next() {
+		var i GetDatarangesForDatapointsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.DataObjectKey,
+			&i.IndexObjectKey,
+			&i.MinDatapointKey,
+			&i.MaxDatapointKey,
+			&i.SizeBytes,
+			&i.DatasetName,
+			&i.Endpoint,
+			&i.Bucket,
+			&i.AccessKey,
+			&i.SecretKey,
+			&i.UseTls,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDatasetWithBucket = `-- name: GetDatasetWithBucket :one
 SELECT d.id, d.name, d.s3_bucket_id, 
        s.endpoint, s.bucket, s.access_key, s.secret_key, s.use_tls
