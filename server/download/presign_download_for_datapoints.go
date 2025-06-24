@@ -108,6 +108,12 @@ func (r *PreSignDownloadForDatapointsRequest) Validate() error {
 }
 
 func (s *DownloadServer) createS3Client(ctx context.Context, datarange postgresstore.GetDatarangesForDatapointsRow) (*s3.Client, error) {
+	// Decrypt credentials
+	accessKey, secretKey, err := s.encryptor.DecryptCredentials(datarange.AccessKey, datarange.SecretKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+	}
+
 	// Build endpoint URL with proper scheme based on UseTls
 	endpoint := datarange.Endpoint
 	if datarange.UseTls {
@@ -123,8 +129,8 @@ func (s *DownloadServer) createS3Client(ctx context.Context, datarange postgress
 	// Create AWS config with custom credentials
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			datarange.AccessKey,
-			datarange.SecretKey,
+			accessKey,
+			secretKey,
 			"", // token
 		)),
 		config.WithRegion("us-east-1"), // default region

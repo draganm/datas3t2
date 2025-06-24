@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"archive/tar"
+	"path/filepath"
 
 	"github.com/draganm/datas3t2/server/bucket"
 	"github.com/draganm/datas3t2/server/dataranges"
@@ -199,15 +200,16 @@ var _ = Describe("PresignDownloadForDatapoints", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create server instances
-		uploadSrv = dataranges.NewServer(db)
-		bucketSrv = bucket.NewServer(db)
-		datasetSrv = datas3t.NewServer(db)
+		uploadSrv, err = dataranges.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
+		bucketSrv, err = bucket.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
+		datasetSrv, err = datas3t.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
 
-		// Create temporary cache directory for testing
-		cacheDir := GinkgoT().TempDir()
-		maxCacheSize := int64(100 * 1024 * 1024) // 100MB cache for tests
-
-		downloadSrv, err = download.NewDownloadServer(db, cacheDir, maxCacheSize)
+		// Create download server with cache
+		cacheDir := filepath.Join(GinkgoT().TempDir(), "cache")
+		downloadSrv, err = download.NewServer(db, cacheDir, 1024*1024*1024, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
 		Expect(err).NotTo(HaveOccurred())
 
 		// Add test bucket configuration

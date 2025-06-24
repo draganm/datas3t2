@@ -287,4 +287,58 @@ This project is licensed under the AGPLV3 License - see the [LICENSE](LICENSE) f
 For questions, issues, or contributions:
 - Open an issue on GitHub
 - Check existing documentation
-- Review test files for usage examples 
+- Review test files for usage examples
+
+## Installation
+
+```bash
+git clone https://github.com/draganm/datas3t2.git
+cd datas3t2
+nix develop -c make build
+```
+
+## Configuration
+
+### Database Setup
+
+Create a PostgreSQL database and set the connection string:
+
+```bash
+export DB_URL="postgres://user:password@localhost:5432/datas3t2"
+export CACHE_DIR="/path/to/cache"
+```
+
+### S3 Credential Encryption
+
+**Important: S3 credentials are encrypted at rest using AES-256-GCM.**
+
+Before starting the server, generate an encryption key:
+
+```bash
+nix develop -c go run ./cmd/keygen
+```
+
+This will output a base64-encoded encryption key. Store this key securely and set it as an environment variable:
+
+```bash
+export ENCRYPTION_KEY="your-generated-key-here"
+```
+
+**Warning: Keep this key secure and backed up! If you lose it, you won't be able to decrypt your stored S3 credentials.**
+
+### Starting the Server
+
+```bash
+./datas3t2-server --db-url "$DB_URL" --cache-dir "$CACHE_DIR" --encryption-key "$ENCRYPTION_KEY"
+```
+
+Or using environment variables:
+
+```bash
+export DB_URL="postgres://user:password@localhost:5432/datas3t2"
+export CACHE_DIR="/path/to/cache"  
+export ENCRYPTION_KEY="your-encryption-key"
+./datas3t2-server
+```
+
+## Usage 

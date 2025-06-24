@@ -115,8 +115,10 @@ var _ = Describe("AddDatas3t", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Create server instances
-		srv = datas3t.NewServer(db)
-		bucketSrv = bucket.NewServer(db)
+		srv, err = datas3t.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
+		bucketSrv, err = bucket.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
 
 		// Add a test bucket configuration that datasets can use
 		bucketInfo := &bucket.BucketInfo{

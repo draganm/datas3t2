@@ -27,10 +27,11 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
 	cfg := struct {
-		addr         string
-		dbURL        string
-		cacheDir     string
-		maxCacheSize int64
+		addr          string
+		dbURL         string
+		cacheDir      string
+		maxCacheSize  int64
+		encryptionKey string
 	}{}
 
 	app := &cli.App{
@@ -65,6 +66,13 @@ func main() {
 				Usage:       "Maximum cache size in bytes",
 				EnvVars:     []string{"MAX_CACHE_SIZE"},
 				Destination: &cfg.maxCacheSize,
+			},
+			&cli.StringFlag{
+				Name:        "encryption-key",
+				Usage:       "Base64-encoded encryption key for S3 credentials (32 bytes)",
+				Required:    true,
+				EnvVars:     []string{"ENCRYPTION_KEY"},
+				Destination: &cfg.encryptionKey,
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -111,7 +119,7 @@ func main() {
 			defer l.Close()
 			logger.Info("server started", "addr", l.Addr())
 
-			s, err := server.NewServer(db, cfg.cacheDir, cfg.maxCacheSize)
+			s, err := server.NewServer(db, cfg.cacheDir, cfg.maxCacheSize, cfg.encryptionKey)
 			if err != nil {
 				return fmt.Errorf("failed to create server: %w", err)
 			}

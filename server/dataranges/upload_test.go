@@ -266,9 +266,12 @@ var _ = Describe("UploadDatarange", func() {
 		})
 
 		// Create server instances
-		uploadSrv = dataranges.NewServer(db)
-		bucketSrv = bucket.NewServer(db)
-		datasetSrv = datas3t.NewServer(db)
+		uploadSrv, err = dataranges.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
+		bucketSrv, err = bucket.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
+		datasetSrv, err = datas3t.NewServer(db, "dGVzdC1rZXktMzItYnl0ZXMtZm9yLXRlc3RpbmchIQ==")
+		Expect(err).NotTo(HaveOccurred())
 
 		// Add test bucket configuration
 		bucketInfo := &bucket.BucketInfo{

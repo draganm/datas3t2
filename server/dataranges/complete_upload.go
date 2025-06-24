@@ -242,6 +242,12 @@ func (s *UploadDatarangeServer) handleFailureInTransaction(ctx context.Context, 
 }
 
 func (s *UploadDatarangeServer) createS3ClientFromUploadDetails(ctx context.Context, uploadDetails postgresstore.GetDatarangeUploadWithDetailsRow) (*s3.Client, error) {
+	// Decrypt credentials
+	accessKey, secretKey, err := s.encryptor.DecryptCredentials(uploadDetails.AccessKey, uploadDetails.SecretKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt credentials: %w", err)
+	}
+
 	// Build endpoint URL with proper scheme
 	endpoint := uploadDetails.Endpoint
 	if uploadDetails.UseTls {
@@ -257,8 +263,8 @@ func (s *UploadDatarangeServer) createS3ClientFromUploadDetails(ctx context.Cont
 	// Create AWS config with custom credentials and timeouts
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-			uploadDetails.AccessKey,
-			uploadDetails.SecretKey,
+			accessKey,
+			secretKey,
 			"", // token
 		)),
 		config.WithRegion("us-east-1"), // default region

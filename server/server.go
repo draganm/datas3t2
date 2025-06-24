@@ -15,16 +15,31 @@ type Server struct {
 	*download.DownloadServer
 }
 
-func NewServer(db *pgxpool.Pool, cacheDir string, maxCacheSize int64) (*Server, error) {
-	downloadServer, err := download.NewDownloadServer(db, cacheDir, maxCacheSize)
+func NewServer(db *pgxpool.Pool, cacheDir string, maxCacheSize int64, encryptionKey string) (*Server, error) {
+	bucketServer, err := bucket.NewServer(db, encryptionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	datas3tServer, err := datas3t.NewServer(db, encryptionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	datarangesServer, err := dataranges.NewServer(db, encryptionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	downloadServer, err := download.NewServer(db, cacheDir, maxCacheSize, encryptionKey)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Server{
-		BucketServer:          bucket.NewServer(db),
-		Datas3tServer:         datas3t.NewServer(db),
-		UploadDatarangeServer: dataranges.NewServer(db),
+		BucketServer:          bucketServer,
+		Datas3tServer:         datas3tServer,
+		UploadDatarangeServer: datarangesServer,
 		DownloadServer:        downloadServer,
 	}, nil
 }
