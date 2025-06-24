@@ -154,3 +154,25 @@ FROM datarange_uploads;
 -- name: CountKeysToDelete :one
 SELECT count(*)
 FROM keys_to_delete;
+
+-- name: GetDatarangesForDatapoints :many
+SELECT 
+    dr.id,
+    dr.data_object_key,
+    dr.index_object_key,
+    dr.min_datapoint_key,
+    dr.max_datapoint_key,
+    dr.size_bytes,
+    d.name as dataset_name,
+    s.endpoint,
+    s.bucket,
+    s.access_key,
+    s.secret_key,
+    s.use_tls
+FROM dataranges dr
+JOIN datasets d ON dr.dataset_id = d.id
+JOIN s3_buckets s ON d.s3_bucket_id = s.id
+WHERE d.name = $1
+  AND dr.min_datapoint_key <= $2  -- datarange starts before or at our last datapoint
+  AND dr.max_datapoint_key >= $3  -- datarange ends after or at our first datapoint
+ORDER BY dr.min_datapoint_key;
