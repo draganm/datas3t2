@@ -37,9 +37,9 @@ func (c *Client) StartDatarangeUpload(ctx context.Context, r *dataranges.UploadD
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to add datas3t: %s: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("failed to start datarange upload: %s: %s", resp.Status, string(body))
 	}
 
 	var respBody dataranges.UploadDatarangeResponse

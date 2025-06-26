@@ -36,7 +36,7 @@ func (c *Client) AddDatas3t(ctx context.Context, datas3t *datas3t.AddDatas3tRequ
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("failed to add datas3t: %s", resp.Status)
 	}
 
